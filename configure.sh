@@ -26,5 +26,5 @@ else
     # Install packages from requirements.txt
     pip install -r requirements.txt
     
-    echo "The 'oscarenv' environment has been created and the relevant dependancies have been installed.
+    echo "The 'oscarenv' environment has been created and the relevant dependancies have been installed."
 fi
