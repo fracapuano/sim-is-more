@@ -14,17 +14,17 @@ else
 fi
 
 # Check if the "thesisenv" environment exists
-if conda env list | grep -q "thesisenv"; then
-    echo "The 'thesisenv' environment already exists."
+if conda env list | grep -q "oscarenv"; then
+    echo "The 'oscarenv' environment already exists."
 else
     # Create the Conda environment
-    conda create -n thesisenv python=3.10.8 -y
+    conda create -n oscarenv python=3.11 -y
     
     # Activate the environment
-    conda activate thesisenv
+    conda activate oscarenv
     
     # Install packages from requirements.txt
     pip install -r requirements.txt
     
-    echo "The 'thesisenv' environment has been created."
+    echo "The 'oscarenv' environment has been created and the relevant dependancies have been installed.
 fi
