@@ -1,0 +1,43 @@
+{   
+    "name": "nats",
+    "devices": ["edgegpu", "raspi4", "pixel3", "eyeriss", "fpga"],
+    "metrics": ["latency"],
+    "operations": ["skip_connect", "nor_conv_1x1", "nor_conv_3x3", "none", "avg_pool_3x3"],
+    "architecture_length": 6,
+    "number_of_architectures": 15625,
+    "edgegpu_latency": {
+        "skip_connect": 0.7391363779703777,
+        "nor_conv_1x1": 1.5818309783935547,
+        "nor_conv_3x3": 1.5416733423868814,
+        "none": 0.11713314056396484,
+        "avg_pool_3x3": 1.1348028182983398
+    },
+    "raspi4_latency": {
+        "skip_connect": 0.5562589746599162,
+        "nor_conv_1x1": 3.4747286479978357,
+        "nor_conv_3x3": 13.991991278657224,
+        "none": 0.002575253335332188,
+        "avg_pool_3x3": 3.1868701840042677
+    },
+    "pixel3_latency": {
+        "skip_connect": 0.25687139999999997,
+        "nor_conv_1x1": 0.8786893333333332,
+        "nor_conv_3x3": 5.7737066666666665,
+        "none": 0.001281816,
+        "avg_pool_3x3": 1.884162
+    },
+    "eyeriss_latency": {
+        "skip_connect": 0.2523426666666667,
+        "nor_conv_1x1": 0.4735266666666669,
+        "nor_conv_3x3": 1.5794466666666667,
+        "none": 0.2523426666666667,
+        "avg_pool_3x3": 1.5794466666666667
+    },
+    "fpga_latency": {
+        "skip_connect": 0.170016,
+        "nor_conv_1x1": 0.634656,
+        "nor_conv_3x3": 1.3875413333333333,
+        "none": 0.170016,
+        "avg_pool_3x3": 0.538656
+    }
+}
