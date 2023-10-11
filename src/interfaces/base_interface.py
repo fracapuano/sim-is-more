@@ -8,53 +8,80 @@ from typing import (
 )
 from numpy.typing import NDArray
 from abc import ABC
+from .utils import validate_search_space
 
 class Base_Interface(ABC):
     """
     Base class for Search Space Interface.
     This class defines the core methods that child classes should be overriding.
     """
-    def __init__(self, blocks_performance:str):
-        with open(blocks_performance, "r") as blocks_file:
-            self._blocks_data = json.load(blocks_file)
-    
+    def __init__(self, searchspace_info:str):
+        with open(searchspace_info, "r") as searchspace_file:
+            self._data = json.load(searchspace_file)
+
+        # this validates the input search space file to make sure it contains all the required keys
+        validate_search_space(self._data)
+
     def contains(self, architecture_list:List[Text])->bool:
         """This function checks whether or not a given architecture is contained
         in the search space.
 
         Args:
             architecture_list (List[Text]): Architecture list.
+        
+        Raises:
+            ValueError: If the input architecture is not a list. Use the `list_to_architecture` method
+                        to convert a string to a list.
 
         Returns:
             bool: True if the architecture is contained, False otherwise.
         """
-        return all([op in self._blocks_data for op in architecture_list])
-    
-    @abstractmethod
+        if not isinstance(architecture_list, list):
+            msg = """
+            Input architecture must be a list to check if it is contained in searchpace! \n 
+            Use the `list_to_architecture` method to convert a string to a list.
+            """
+            raise ValueError(msg)
+        
+        return all([op in self.all_ops for op in architecture_list])
+
+    @property
+    def name(self)->Text: 
+        """Name of the considered search space."""
+        return self._data["name"]
+
     def __len__(self)->int:
         """Number of architectures in considered search space."""
-        raise NotImplementedError("Abstract method!")
+        return self._data["number_of_architectures"]
+    
+    def blocks_data(self, device:str, metric:str):
+        return self._data[f"{device}_{metric}"]
+    
+    @property
+    def architecture_len(self): 
+        return self._data["architecture_length"]
+
+    @property
+    def all_ops(self): 
+        return self._data["operations"]
+    
+    def __iter__(self):
+        """Iterator method"""
+        self.iteration_index = 0
+        return self
+
+    def __next__(self):
+        if self.iteration_index >= self.__len__():
+            raise StopIteration
+        # access current element 
+        net = self[self.iteration_index]
+        # update the iteration index
+        self.iteration_index += 1
+        return net
     
     @abstractmethod
     def __getitem__(self, idx:int) -> Dict: 
-        """Returns (untrained) network corresponding to index `idx`"""
-        return self._data[idx]
-    
-    @abstractproperty
-    def name(self)->Text: 
-        raise NotImplementedError("Abstract property!")
-    
-    @property
-    def blocks_data(self):
-        return self._blocks_data
-
-    @abstractproperty
-    def architecture_len(self): 
-        raise NotImplementedError("Abstract property!")
-    
-    @abstractproperty
-    def all_ops(self): 
-        raise NotImplementedError("Abstract property!")
+        raise NotImplementedError("Abstract method!")
     
     @abstractmethod
     def list_to_accuracy(self, input_list:List[Text])->float:
@@ -162,17 +189,3 @@ class Base_Interface(ABC):
             List[Tuple[List[Text], List[int]]]: (Architecture list, index) tuple.
         """
         raise NotImplementedError("Abstract method!")
-
-    def __iter__(self):
-        """Iterator method"""
-        self.iteration_index = 0
-        return self
-
-    def __next__(self):
-        if self.iteration_index >= self.__len__():
-            raise StopIteration
-        # access current element 
-        net = self[self.iteration_index]
-        # update the iteration index
-        self.iteration_index += 1
-        return net
