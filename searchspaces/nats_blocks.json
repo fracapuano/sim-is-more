@@ -2,7 +2,7 @@
     "name": "nats",
     "devices": ["edgegpu", "raspi4", "pixel3", "eyeriss", "fpga"],
     "metrics": ["latency"],
-    "operations": ["skip_connect", "nor_conv_1x1", "nor_conv_3x3", "none", "avg_pool_3x3"],
+    "operations": ["none", "skip_connect", "avg_pool_3x3", "nor_conv_1x1", "nor_conv_3x3"],
     "architecture_length": 6,
     "number_of_architectures": 15625,
     "edgegpu_latency": {
