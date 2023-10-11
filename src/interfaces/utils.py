@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List
 
 def validate_search_space(searchspace_dict:Dict)->bool:        
     """
@@ -53,7 +53,47 @@ def validate_search_space(searchspace_dict:Dict)->bool:
         raise ValueError("Invalid search space file! Make sure the interface file is correct!")
 
 
-class Device:
-    """Typing-only class for device objects"""
+def encode_base_n_list(n:int, base_n_list:List[int])->int:
+    """Convert a list in which each element take values up to n to a base-n integer value.
+    EXAMPLE: 
+    n, input_list = 5, [4, 3, 2, 1, 0, 4]
+    output = 4 * 5^0 + 3 * 5^1 + 2 * 5^2 + 1 * 5^3 + 0 * 5^4 + 4 * 5^5 = 3124
 
-     
+    Args:
+        n (int): Base of the integer value.
+        base_n_list (List[int]): List of integers to convert.
+    
+    Returns:
+        int: Base-n integer value.
+    """
+    integer_value = sum(val * (n ** idx) for idx, val in enumerate(base_n_list[::-1]))
+    return integer_value
+
+def decode_to_base_n_list(integer_value:int, n:int, list_length:int)->List[int]:
+    """Convert an integer to its base-n list representation. This function serves as the inverse
+    of `encode_base_n_list`.
+    EXAMPLE:
+    n, integer_value, list_length = 5, 3124, 6
+    output = [4, 3, 2, 1, 0, 4]
+
+    Args:
+        integer_value (int): Integer value to convert.
+        n (int): Base of the integer value.
+        list_length (int): Length of the output list.
+    
+    Returns:
+        List[int]: Base-n list representation of the input integer value.
+    """
+    base_n_list = []
+    
+    while integer_value > 0:
+        remainder = integer_value % n
+        base_n_list.append(remainder)
+        integer_value //= n
+
+    # If the number is shorter than expected, pad with zeros
+    while len(base_n_list) < list_length:
+        base_n_list.append(0)
+
+    # The list is constructed in reverse order, so reverse it
+    return base_n_list[::-1]
