@@ -8,7 +8,11 @@ from typing import (
 )
 from numpy.typing import NDArray
 from abc import ABC
-from .utils import validate_search_space
+from .utils import (
+    validate_search_space,
+    list_to_base_n_integer,
+    base_n_integer_to_list
+)
 
 class Base_Interface(ABC):
     """
@@ -44,7 +48,7 @@ class Base_Interface(ABC):
             raise ValueError(msg)
         
         return all([op in self.all_ops for op in architecture_list])
-
+    
     @property
     def name(self)->Text: 
         """Name of the considered search space."""
@@ -64,6 +68,68 @@ class Base_Interface(ABC):
     @property
     def all_ops(self): 
         return self._data["operations"]
+    
+    def list_to_index(self, architecture_list:List[Text])->int:
+        """This function maps a given architecture list to the corresponding unique index.
+        
+        Args:
+            architecture_list (List[Text]): Architecture list. This architecture list must be contained
+                                            in the search space to not raise an error!
+        
+        Raises: 
+            ValueError: If the input architecture is not contained in the search space.
+        
+        Returns:
+            int: Unique-index of the input architecture.
+        """
+        if not self.contains(architecture_list):
+            msg = f"""
+            Input architecture is not contained in the search space! \n 
+            Use the `contains` method to check if a given architecture is contained in the search space.
+            """
+            raise ValueError(msg)
+
+        # mapping the list of operations to the corresponding indices according to self.all_ops
+        list_of_indices = [self.all_ops.index(op) for op in architecture_list]
+        # converting the list of indices to a single integer
+        return list_to_base_n_integer(n=len(self.all_ops), base_10_list=list_of_indices)
+    
+    def index_to_list(self, architecture_index:int)->List[Text]:
+        """This function maps a given architecture index to the corresponding architecture list.
+        Given a list `L` of length `n`, where each element in the list can take on values ranging from 
+        0 up to `m-1` (inclusive), the encoded "integer_value" can have a specific range:
+        1. Minimum Encoded Value:
+            The smallest possible value for "integer_value" is when all elements 
+            of the list are 0. In this scenario, the encoded value is 0.
+        2. Maximum Encoded Value:
+            The largest possible value for "integer_value" is when all elements of the list are `m-1`.
+            This maximum encoded value can be calculated as `m^n - 1`.
+
+        Thus, the overall range of possible values for "integer_value" is from 
+        0 to `m^n - 1` inclusive.
+        
+        Args:
+            architecture_index (int): Architecture index. This architecture index must be contained
+                                      in the search space to not raise an error!
+        
+        Raises: 
+            ValueError: If the input architecture is not contained in the search space.
+        
+        Returns:
+            List[Text]: Architecture list.
+        """
+        # checking if the integer representing the architecture is contained in the search space
+        if architecture_index not in range(0, len(self)):
+            msg = f"""
+            Input architecture is not contained in the search space! \n 
+            Use the `contains` method to check if a given architecture is contained in the search space.
+            """
+            raise ValueError(msg)
+        
+        # converting the integer to a list of indices
+        list_of_indices = base_n_integer_to_list(n=len(self.all_ops), base_n_integer=architecture_index)
+        # mapping the list of indices to the corresponding operations according to self.all_ops
+        return [self.all_ops[idx] for idx in list_of_indices]
     
     def __iter__(self):
         """Iterator method"""
