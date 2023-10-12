@@ -53,7 +53,7 @@ def validate_search_space(searchspace_dict:Dict)->bool:
         raise ValueError("Invalid search space file! Make sure the interface file is correct!")
 
 
-def encode_base_n_list(n:int, base_n_list:List[int])->int:
+def list_to_base_n_integer(n:int, base_n_list:List[int])->int:
     """Convert a list in which each element take values up to n to a base-n integer value.
     EXAMPLE: 
     n, input_list = 5, [4, 3, 2, 1, 0, 4]
@@ -70,7 +70,7 @@ def encode_base_n_list(n:int, base_n_list:List[int])->int:
     return integer_value
 
 
-def decode_to_base_n_list(integer_value:int, n:int, list_length:int)->List[int]:
+def base_n_integer_to_list(integer_value:int, n:int, list_length:int)->List[int]:
     """Convert an integer to its base-n list representation. This function serves as the inverse
     of `encode_base_n_list`.
     EXAMPLE:
