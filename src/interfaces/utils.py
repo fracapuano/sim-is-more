@@ -69,6 +69,7 @@ def encode_base_n_list(n:int, base_n_list:List[int])->int:
     integer_value = sum(val * (n ** idx) for idx, val in enumerate(base_n_list[::-1]))
     return integer_value
 
+
 def decode_to_base_n_list(integer_value:int, n:int, list_length:int)->List[int]:
     """Convert an integer to its base-n list representation. This function serves as the inverse
     of `encode_base_n_list`.
