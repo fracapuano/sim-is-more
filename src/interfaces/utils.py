@@ -53,7 +53,7 @@ def validate_search_space(searchspace_dict:Dict)->bool:
         raise ValueError("Invalid search space file! Make sure the interface file is correct!")
 
 
-def list_to_base_n_integer(n:int, base_n_list:List[int])->int:
+def list_to_base_n_integer(n:int, base_10_list:List[int])->int:
     """Convert a list in which each element take values up to n to a base-n integer value.
     EXAMPLE: 
     n, input_list = 5, [4, 3, 2, 1, 0, 4]
@@ -61,12 +61,12 @@ def list_to_base_n_integer(n:int, base_n_list:List[int])->int:
 
     Args:
         n (int): Base of the integer value.
-        base_n_list (List[int]): List of integers to convert.
+        base_10_list (List[int]): List of integers to convert.
     
     Returns:
         int: Base-n integer value.
     """
-    integer_value = sum(val * (n ** idx) for idx, val in enumerate(base_n_list[::-1]))
+    integer_value = sum(val * (n ** idx) for idx, val in enumerate(base_10_list[::-1]))
     return integer_value
 
 
