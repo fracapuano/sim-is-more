@@ -1,6 +1,6 @@
-from network_utils import TinyNetwork
-from training_free_scores import scores_router
-from trainer import training_router
+from ..network_utils import TinyNetwork
+from ..training_free_scores import scores_router
+from ..trainer import training_router
 from .base_interface import Base_Interface
 from ..utils import get_project_root
 from typing import (
@@ -22,14 +22,14 @@ class NATS_Interface(Base_Interface):
     NATS-specific search space interface.
     """
     def __init__(self, 
-                 datapath:str=str(get_project_root()) + "searchspaces/nats_blocks.json",
+                 datapath:str=str(get_project_root()) + "/searchspaces/nats_blocks.json",
                  dataset:str="cifar10",
                  target_device:Text="edgegpu",
                  use_lookup_table:bool=False,
                  path_to_lookup:Optional[str]=None):
         
-        # parent init
-        super().__init__(datapath=datapath)
+        # parent init, loading the datapath
+        super().__init__(datapath)
 
         self._dataset = dataset
         self.target_device = target_device
@@ -39,10 +39,14 @@ class NATS_Interface(Base_Interface):
             raise ValueError(
                 "If using lookup table, path to lookup table must be provided! Provided: {}".format(path_to_lookup)
             )
-        else:
+        elif path_to_lookup is not None:
             with open(path_to_lookup, "r") as lookup_file:
                 self.lookup_table = {int(k): v for k, v in json.load(lookup_file).items()}
     
+    @property
+    def dataset(self)->str: 
+        return self._dataset
+
     def __getitem__(self, index:int)->Union[str, TinyNetwork]:
         pass
         
@@ -283,6 +287,6 @@ class NATS_Interface(Base_Interface):
         """
         # retrieving the architecture list out of the architecture string
         architecture_list = self.architecture_to_list(architecture_string=architecture_string)
-        
+
         return self.compute_score(score_name=score, index=self.list_to_index(architecture_list=architecture_list))
 
