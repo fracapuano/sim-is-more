@@ -1,4 +1,4 @@
-from ..network_utils import TinyNetwork
+from ..network_utils import TinyNetwork, get_cell_based_tiny_net
 from ..training_free_scores import scores_router
 from ..trainer import training_router
 from .base_interface import Base_Interface
@@ -6,8 +6,7 @@ from ..utils import get_project_root
 from typing import (
     Text, 
     Optional, 
-    Union, 
-    Tuple, 
+    Tuple,
     List
 )
 import json
@@ -42,13 +41,60 @@ class NATS_Interface(Base_Interface):
         elif path_to_lookup is not None:
             with open(path_to_lookup, "r") as lookup_file:
                 self.lookup_table = {int(k): v for k, v in json.load(lookup_file).items()}
-    
+        
+        # routing the number of classes based on datasets
+        if dataset == "cifar10": 
+            self.network_numclasses = 10
+        elif dataset == "cifar100": 
+            self.network_numclasses = 100
+        elif dataset == "ImageNet16-120":
+            self.network_numclasses = 120
+
     @property
-    def dataset(self)->str: 
+    def dataset(self)->str:
         return self._dataset
 
-    def __getitem__(self, index:int)->Union[str, TinyNetwork]:
-        pass
+    def __getitem__(self, index:int)->str:
+        """Retrives the architecture string which is associated with a given index.
+
+        Args:
+            index (int): Numerical index, between 0 and self.__len__()
+
+        Returns:
+            str: Architecture string associated with index.
+        """
+        return "{}~0/{}~0/{}~1/{}~0/{}~1/{}~2".format(*self.index_to_list(architecture_index=index))
+
+    def get_config_dictionary(self, index:int)->dict:
+        """Retrieves the configuration dictionary associated with a given index.
+        
+        Args: 
+            index (int): Index associated to the architecture of interest.
+        
+        Returns: 
+            dict: Confiugration dict (for TinyNetwork usage)
+        """
+        return dict(
+            name="infer.tiny", 
+            C=16,
+            N=5, 
+            num_classes=self.network_numclasses,
+            arch_str=self[index])
+
+    def get_network(self, index:int)->TinyNetwork:
+        """Retrieves the TinyNetwork object associated with a given index.
+
+        Args:
+            index (int): Numerical index, between 0 and self.__len__()
+
+        Returns:
+            TinyNetwork: TinyNetwork object associated with index.
+        """
+        if index < 0 or index >= len(self):
+            raise ValueError(f"Index out of bounds! Must be between 0 and {len(self)}.")
+        
+        network = get_cell_based_tiny_net(self.get_config_dictionary(index=index))
+        return network
         
     def compute_score(self, score_name:Text, index:int)->float:
         """
@@ -64,7 +110,7 @@ class NATS_Interface(Base_Interface):
         if self.using_lookup:
             return self.lookup_table[index][self.dataset][score_name]
         else:
-            return scores_router[score_name](search_space=self, network_idx=index, dataset=self.dataset)
+            return scores_router[score_name](network_idx=index, dataset=self.dataset)
 
     def get_score_mean_and_std(self, score_name:Text, sample_size:Optional[int]=None)->Tuple[float, float]:
         """
