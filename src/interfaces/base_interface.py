@@ -69,6 +69,10 @@ class Base_Interface(ABC):
     def all_ops(self): 
         return self._data["operations"]
     
+    @all_ops.setter
+    def set_all_ops(self, ops_list:List[Text]):
+        self._data["operations"] = ops_list
+    
     def list_to_index(self, architecture_list:List[Text])->int:
         """This function maps a given architecture list to the corresponding unique index.
         
@@ -127,7 +131,11 @@ class Base_Interface(ABC):
             raise ValueError(msg)
         
         # converting the integer to a list of indices
-        list_of_indices = base_n_integer_to_list(n=len(self.all_ops), base_n_integer=architecture_index)
+        list_of_indices = base_n_integer_to_list(
+            n=len(self.all_ops), 
+            integer_value=architecture_index,
+            list_length=self.architecture_len
+        )
         # mapping the list of indices to the corresponding operations according to self.all_ops
         return [self.all_ops[idx] for idx in list_of_indices]
     
