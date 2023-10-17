@@ -25,7 +25,8 @@ class NATS_Interface(Base_Interface):
                  dataset:str="cifar10",
                  target_device:Text="edgegpu",
                  use_lookup_table:bool=False,
-                 path_to_lookup:Optional[str]=None):
+                 path_to_lookup:Optional[str]=None, 
+                 path_to_lookup_index:Optional[str]=None):
         
         # parent init, loading the datapath
         super().__init__(datapath)
@@ -41,7 +42,9 @@ class NATS_Interface(Base_Interface):
         elif path_to_lookup is not None:
             with open(path_to_lookup, "r") as lookup_file:
                 self.lookup_table = {int(k): v for k, v in json.load(lookup_file).items()}
-        
+            with open(path_to_lookup_index, "r") as lookup_index_file:
+                self.lookup_index = json.load(lookup_index_file)
+
         # routing the number of classes based on datasets
         if dataset == "cifar10": 
             self.network_numclasses = 10
@@ -63,7 +66,23 @@ class NATS_Interface(Base_Interface):
         Returns:
             str: Architecture string associated with index.
         """
-        return "{}~0/{}~0/{}~1/{}~0/{}~1/{}~2".format(*self.index_to_list(architecture_index=index))
+        return "{}~0|+|{}~0|{}~1|+|{}~0|{}~1|{}~2|".format(*(self.index_to_list(architecture_index=index)))
+    
+    def index_to_lookup_index(self, index:int)->int:
+        """Retrieves the lookup index associated with a given index.
+
+        Args:
+            index (int): Numerical index, between 0 and self.__len__()
+
+        Returns:
+            int: Lookup index associated with index.
+        """
+        if not (index >= 0 and index <= len(self)):
+            raise ValueError(f"Index out of bounds! Must be between 0 and {len(self)}.")
+        
+        return self.lookup_index[
+            "{}~0/{}~0/{}~1/{}~0/{}~1/{}~2".format(*(self.index_to_list(architecture_index=index)))
+        ]
 
     def get_config_dictionary(self, index:int)->dict:
         """Retrieves the configuration dictionary associated with a given index.
@@ -74,12 +93,13 @@ class NATS_Interface(Base_Interface):
         Returns: 
             dict: Confiugration dict (for TinyNetwork usage)
         """
-        return dict(
-            name="infer.tiny", 
-            C=16,
-            N=5, 
-            num_classes=self.network_numclasses,
-            arch_str=self[index])
+        return {
+            "name": "infer.tiny", 
+            "C": 16,
+            "N": 5, 
+            "num_classes": self.network_numclasses,
+            "arch_str": self[index]
+        }
 
     def get_network(self, index:int)->TinyNetwork:
         """Retrieves the TinyNetwork object associated with a given index.
@@ -108,7 +128,8 @@ class NATS_Interface(Base_Interface):
             float: The score value.
         """
         if self.using_lookup:
-            return self.lookup_table[index][self.dataset][score_name]
+            lookup_index = self.index_to_lookup_index(index=index)
+            return self.lookup_table[lookup_index][self.dataset][score_name]
         else:
             return scores_router[score_name](network_idx=index, dataset=self.dataset)
 
@@ -132,28 +153,28 @@ class NATS_Interface(Base_Interface):
         # when sample_size is None, the mean is calculated across the entire dataset
         n_networks = sample_size if sample_size is not None else len(self)
         
-        if not hasattr(self, "{score_name}_values"):
+        if not hasattr(self, f"{score_name}_values"):
             # randomly sample n_networks indices
             random_indices = np.random.choice(len(self), size=n_networks, replace=False)
             # computing the score value for each of the randomly sampled indices
             score_values = np.zeros(n_networks)
-            for i in tqdm(random_indices, desc=f"Computing {score_name} values..."):
-                score_values[i] = self.compute_score(score_name=score_name, index=i)
+            for idx, i in tqdm(enumerate(random_indices), desc=f"Computing {score_name} values..."):
+                score_values[idx] = self.compute_score(score_name=score_name, index=i)
             
             # store these new values in the interface object
-            setattr(self, f"{score_name}_values")
+            setattr(self, f"{score_name}_values", score_values)
 
         # computing the mean and std of the score values
         if not hasattr(self, f"mean_{score_name}"):
             setattr(self, 
                     f"mean_{score_name}", 
-                    score_values.mean()
+                    getattr(self, f"{score_name}_values").mean()
                     )
         
         if not hasattr(self, f"std_{score_name}"):
             setattr(self, 
                     f"std_{score_name}", 
-                    score_values.std()
+                    getattr(self, f"{score_name}_values").std()
                     )
         
         return getattr(self, f"mean_{score_name}"), getattr(self, f"std_{score_name}")
@@ -161,7 +182,7 @@ class NATS_Interface(Base_Interface):
     def generate_random_samples(self, n_samples:int=10)->Tuple[List[Text], List[int]]:
         """Generate a group of architectures chosen at random"""
         idxs = np.random.choice(len(self), size=n_samples, replace=False)
-        cell_structures = [self[i]["architecture_string"] for i in idxs]
+        cell_structures = [self[i] for i in idxs]
         # return tinynets, cell_structures_string and the unique indices of the networks
         return cell_structures, idxs
     
