@@ -14,14 +14,14 @@ def dict2config(xdict, logger):
 
 
 def get_cell_based_tiny_net(config):
-    if config.name == 'infer.tiny':
+    if config["name"] == 'infer.tiny':
         from .tiny_network import TinyNetwork
-        if hasattr(config, 'genotype'):
-            genotype = config.genotype
-        elif hasattr(config, 'arch_str'):
-            genotype = CellStructure.str2structure(config.arch_str)
+        if 'genotype' in config:
+            genotype = config["genotype"]
+        elif 'arch_str' in config:
+            genotype = CellStructure.str2structure(config["arch_str"])
         else: raise ValueError('Can not find genotype from this config : {:}'.format(config))
-        return TinyNetwork(config.C, config.N, genotype, config.num_classes)
+        return TinyNetwork(config["C"], config["N"], genotype, config["num_classes"])
     
-    raise ValueError('invalid network name : {:}'.format(config.name))
+    raise ValueError('invalid network name : {:}'.format(config["name"]))
 
