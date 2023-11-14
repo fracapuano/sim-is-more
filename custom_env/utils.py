@@ -156,3 +156,4 @@ def create_learning_rate_scheduler(
         raise ValueError(f"Scheduler type: {kind} not implemented! Implemented schedulers: ['exp', 'sine', 'sawtooth']")
 
     return scheduler
+

@@ -3,7 +3,7 @@ import numpy as np
 from itertools import chain
 from numpy.typing import NDArray
 from .base_env import BaseNASEnv
-from commons import BaseInterface
+from src import Base_Interface
 from .utils import NASIndividual
 from typing import Iterable, Tuple, Text
 
@@ -16,7 +16,7 @@ class NASEnv(BaseNASEnv):
     2. FreeREA: Training-Free Evolution-Based Architecture Search, https://arxiv.org/pdf/2207.05135.pdf
     """
     def __init__(self, 
-                 searchspace_api:BaseInterface,
+                 searchspace_api:Base_Interface,
                  scores:Iterable[Text]=["naswot_score", "logsynflow_score", "skip_score"], 
                  n_mods:int=1,
                  max_timesteps:int=50):

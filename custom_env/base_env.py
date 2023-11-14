@@ -1,7 +1,7 @@
 import gym
 import numpy as np
 from abc import abstractproperty
-from commons import BaseInterface
+from src import Base_Interface
 from typing import Text
 
 class BaseNASEnv(gym.Env): 
@@ -10,9 +10,7 @@ class BaseNASEnv(gym.Env):
         "render_modes": ["human", "rgb_array"],
         "render_fps": 5
     }
-    def __init__(self,
-                 searchspace_interface:BaseInterface,                 
-                 ):
+    def __init__(self, searchspace_interface:Base_Interface):
         """Init function. Here characteristics of the base nas env are defined"""
         super().__init__()
 
@@ -36,3 +34,4 @@ class BaseNASEnv(gym.Env):
     
     def reset(self, seed:int=None):
         raise NotImplementedError("Reset method must be ovveridden in child classes!")
+

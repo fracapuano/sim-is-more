@@ -1,5 +1,5 @@
 import json
-from hwnats_api import HWNASBenchAPI
+from src.interfaces.hwnats_api import HWNASBenchAPI
 
 api = HWNASBenchAPI(file_path_or_dict="HW-NAS-Bench-v1_0.pickle", search_space="fbnet")
 

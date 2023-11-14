@@ -2,7 +2,7 @@ from policy.policy import Policy
 import argparse
 import time
 import pickle
-from commons import (
+from src import (
     seed_all, 
     NATS_FastInterface,
     HW_NATS_FastInterface

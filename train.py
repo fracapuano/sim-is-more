@@ -1,5 +1,4 @@
 import torch
-import os
 from policy.policy import Policy
 from policy import (
     Hybrid_PolicyCallback, 
@@ -15,14 +14,10 @@ from wandb.integration.sb3 import WandbCallback
 import argparse
 from custom_env import (
     envs_dict, 
-    build_vec_env, 
-    hardware_agnostic_search,
-    hardware_aware_search,
-    pure_search
+    build_vec_env
 )
-from commons import (
-    NATS_FastInterface, 
-    HW_NATS_FastInterface,
+from src import (
+    NATS_Interface,
     to_scientific_notation, 
     seed_all
 )
@@ -40,7 +35,8 @@ def parse_args()->object:
     parser = argparse.ArgumentParser()
     parser.add_argument("--algorithm", default="PPO", type=str, help="RL Algorithm. One in ['ppo', 'trpo', 'a2c']")
     parser.add_argument("--dataset", default="cifar10", type=str, help="Dataset on which to run the search. One in ['cifar10', 'cifar100', 'imagenet']")
-    parser.add_argument("--env", default="renas", type=str, help=f"Environment to be used. One in {list(envs_dict.keys())}")
+    parser.add_argument("--env", default="oscar", type=str, help=f"Environment to be used. One in {list(envs_dict.keys())}")
+    parser.add_argument("--searchspace", default="nats", type=str, help=f"Searchspace to be used. One in ['nats', 'fbnet']")
     parser.add_argument("--target-device", default="raspi4", type=str, help="Target device (for hardware aware algorithms only)")
     parser.add_argument("--verbose", default=0, type=int, help="Verbosity value")
     parser.add_argument("--train-timesteps", default=1e5, type=float, help="Number of timesteps to train the RL algorithm with")
@@ -65,7 +61,7 @@ def parse_args()->object:
     #parser.add_argument("--default", action="store_true", help="Default mode, ignore all configurations")
     parser.add_argument("--debug", action="store_true", help="Default mode, ignore all configurations")
     
-    return parser.parse_args()
+    return parser.parse_args()x1
 
 def main():
     """Performs training and logs info to wandb."""
@@ -74,6 +70,7 @@ def main():
     algorithm=args.algorithm
     dataset=args.dataset
     env_name=args.env
+    searchspace=args.searchspace
     target_device=args.target_device
     verbose=args.verbose
     train_timesteps=int(args.train_timesteps)
@@ -96,14 +93,14 @@ def main():
         algorithm="PPO"
         dataset="cifar10"
         env_name="oscar"
-        n_envs=2
+        searchspace="nats"
+        n_envs=1
         train_timesteps=int(1e4)
         test_episodes=25
         evaluate_every=int(1e3)
         verbose=1
-        offline=False
+        offline=True
         epsilon_scheduling="sawtooth"
-        lr_scheduling="sine"
         use_wandb_callback=True
         multitask=False
         parallel_envs=True
@@ -115,12 +112,13 @@ def main():
     if multitask and env_name.lower()!="marcella": 
         raise ValueError(f"MultiTasking not supported for {env_name}! Only supported for 'marcella' env")
 
-    if env_name.lower() in hardware_agnostic_search: 
-        searchspace_interface = NATS_FastInterface(dataset=dataset)
-    elif env_name.lower() in hardware_aware_search:
-        searchspace_interface = HW_NATS_FastInterface(dataset=dataset)
-    else: 
-        raise ValueError(f"{env_name} not in {[hardware_agnostic_search]+[hardware_aware_search]}")
+    if searchspace.lower() == "nats": 
+        searchspace_interface = NATS_Interface(dataset=dataset)
+    elif searchspace.lower() == "fbnet":
+        # searchspace_interface = FBNet_Interface(dataset=dataset)
+        pass
+    else:
+        raise ValueError(f"{env_name} not in ['nats', 'fbnet']")
     
     # set seed for reproducibility
     seed_all(seed=seed)
@@ -130,11 +128,8 @@ def main():
     # create env (gym.Env)
     env = envs_dict[env_name.lower()](searchspace_api=searchspace_interface)
 
-    # differentiating between hardware aware search processes
-    hardware_aware = env_name.lower() in hardware_aware_search
     # changing the target device based on user input
-    if hardware_aware:
-        env.target_device = target_device
+    env.target_device = target_device
     
     # build the envs according to spec
     envs = build_vec_env(
@@ -149,7 +144,7 @@ def main():
         discount_factor=GAMMA,
         train_timesteps=to_scientific_notation(train_timesteps),
         random_seed=seed,
-        target_device=target_device if hardware_aware else None
+        target_device=target_device
     )
 
     if verbose > 0: 
@@ -164,7 +159,7 @@ def main():
     # os.environ["WANDB_SILENT"] = "true" 
 
     run = wandb.init(
-        project="Debug-Thesis",
+        project="Debug-Oscar",
         config=training_config,
         name=default_name,
         mode="offline" if offline else "online",
@@ -172,25 +167,17 @@ def main():
     )
     
     # best models are saved in models - when specialized for target hardware are stored in specific subfolders
-    best_model_path = f"models/{run.name}" if env.name not in hardware_aware_search else f"models/{target_device}/{run.name}"
+    best_model_path = f"models/{target_device}/{run.name}"
 
     if multitask:
         best_model_path = "models/marcella/" + f"{target_device}/{run.name}"
 
-    if env.name not in pure_search:  # callback used depends on search strategy, which is either hybrid or purely RL-based
-        # this callback is wrapped in `EveryNTimesteps`
-        inner_callback = Hybrid_PolicyCallback(
-            env=envs,
-            n_eval_episodes=test_episodes, 
-            best_model_path=best_model_path
-        )
-    else:  # pure RL-based search
-        # this callback is wrapped in `EveryNTimesteps`
-        inner_callback = PureRL_PolicyCallback(
-            env=envs,
-            n_eval_episodes=test_episodes, 
-            best_model_path=best_model_path
-        )
+    # this callback is wrapped in `EveryNTimesteps`
+    inner_callback = PureRL_PolicyCallback(
+        env=envs,
+        n_eval_episodes=test_episodes, 
+        best_model_path=best_model_path
+    )
     
     # invoke inner_callback every `evaluate_every` timesteps
     evaluation_callback = EveryNTimesteps(n_steps=evaluate_every, callback=inner_callback)
@@ -214,10 +201,6 @@ def main():
     # optionally triggers the epsilon scheduler to be triggered!
     if epsilon_scheduling.lower() != "const":
         policy.set_epsilon_scheduler(kind=epsilon_scheduling)
-    
-    # optionally triggers the epsilon scheduler to be triggered!
-    # if lr_scheduling.lower() != "const":
-    #     policy.set_lr_scheduler(kind=lr_scheduling)
     
     if use_wandb_callback:
         policy.model.tensorboard_log = f"runs/{run.id}"

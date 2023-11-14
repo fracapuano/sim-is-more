@@ -24,9 +24,9 @@ class NATS_Interface(Base_Interface):
                  datapath:str=str(get_project_root()) + "/searchspaces/nats_blocks.json",
                  dataset:str="cifar10",
                  target_device:Text="edgegpu",
-                 use_lookup_table:bool=False,
-                 path_to_lookup:Optional[str]=None, 
-                 path_to_lookup_index:Optional[str]=None):
+                 use_lookup_table:bool=True,
+                 path_to_lookup:Optional[str]=str(get_project_root()) + "/searchspaces/nats_interface_lookuptable.json", 
+                 path_to_lookup_index:Optional[str]=str(get_project_root()) + "/searchspaces/nats_arch_index.json"):
         
         # parent init, loading the datapath
         super().__init__(datapath)
@@ -43,7 +43,7 @@ class NATS_Interface(Base_Interface):
             with open(path_to_lookup, "r") as lookup_file:
                 self.lookup_table = {int(k): v for k, v in json.load(lookup_file).items()}
             with open(path_to_lookup_index, "r") as lookup_index_file:
-                self.lookup_index = json.load(lookup_index_file)
+                self.architecture_to_index = json.load(lookup_index_file)
 
         # routing the number of classes based on datasets
         if dataset == "cifar10": 
@@ -80,7 +80,7 @@ class NATS_Interface(Base_Interface):
         if not (index >= 0 and index <= len(self)):
             raise ValueError(f"Index out of bounds! Must be between 0 and {len(self)}.")
         
-        return self.lookup_index[
+        return self.architecture_to_index[
             "{}~0/{}~0/{}~1/{}~0/{}~1/{}~2".format(*(self.index_to_list(architecture_index=index)))
         ]
 
@@ -283,7 +283,7 @@ class NATS_Interface(Base_Interface):
         indices = np.argmax(architecture_encoded, axis=1) if onehot else architecture_encoded.tolist()
         levels = ["~0", "~0", "~1", "~0", "~1", "~2"]
         # Map the indices to the corresponding operations
-        architecture_list = [self.ordered_all_ops[index] + level for index, level in zip(indices, levels)]
+        architecture_list = [self.all_ops[index] + level for index, level in zip(indices, levels)]
         # Concatenate the operations to form the architecture string
         architecture_string = self.list_to_architecture(input_list=architecture_list)
 
@@ -338,7 +338,9 @@ class NATS_Interface(Base_Interface):
         Returns:
             float: Score value for `input_list`.
         """
-        return self.compute_score(score_name=score, index=self.list_to_index(architecture_list=input_list))
+        # splitting the input list to retrieve the operations only -- this is then fed into list_to_index
+        levels_split = [op.split("~")[0] for op in input_list]
+        return self.compute_score(score_name=score, index=self.list_to_index(architecture_list=levels_split))
 
     def architecture_to_score(self, architecture_string:Text, score:Text)->float:
         """Returns the value of `score` of an architecture string.

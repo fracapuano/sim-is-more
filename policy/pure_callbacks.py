@@ -124,3 +124,4 @@ class PureRL_PolicyCallback(BaseCallback):
             return self.best_model, self.best_model_mean_reward
         else: 
             return self.best_model
+

@@ -1,0 +1,47 @@
+{
+    "os": "macOS-10.16-x86_64-i386-64bit",
+    "python": "3.11.5",
+    "heartbeatAt": "2023-10-19T19:50:50.774564",
+    "startedAt": "2023-10-19T19:50:50.579895",
+    "docker": null,
+    "cuda": null,
+    "args": [
+        "--debug"
+    ],
+    "state": "running",
+    "program": "/Users/68372/Desktop/OSCAR/train.py",
+    "codePathLocal": "train.py",
+    "codePath": "train.py",
+    "git": {
+        "remote": "https://github.com/fracapuano/MARCELLA",
+        "commit": "8518b69ed60c5dc22ecff9a86860e88634b9fbe8"
+    },
+    "email": "francesco_capuano@aol.com",
+    "root": "/Users/68372/Desktop/OSCAR",
+    "host": "MILMAC-68372",
+    "username": "68372",
+    "executable": "/Users/68372/miniconda3/envs/oscarenv/bin/python",
+    "cpu_count": 6,
+    "cpu_count_logical": 12,
+    "cpu_freq": {
+        "current": 2600,
+        "min": 2600,
+        "max": 2600
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 2600,
+            "min": 2600,
+            "max": 2600
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 465.62699127197266,
+            "used": 107.03208923339844
+        }
+    },
+    "memory": {
+        "total": 16.0
+    }
+}

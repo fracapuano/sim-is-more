@@ -1,6 +1,6 @@
 from gym import spaces
 import numpy as np
-from commons import BaseInterface
+from src import Base_Interface
 from .base_env import BaseNASEnv
 from .utils import NASIndividual
 from typing import Iterable, Text, Tuple, Dict
@@ -13,7 +13,7 @@ class OscarEnv(BaseNASEnv):
     only as well as specific hardware related metrics.
     """
     def __init__(self, 
-                 searchspace_api:BaseInterface,
+                 searchspace_api:Base_Interface,
                  scores:Iterable[Text]=["naswot_score", "logsynflow_score", "skip_score"],
                  n_mods:int=1,
                  max_timesteps:int=50,
@@ -90,8 +90,7 @@ class OscarEnv(BaseNASEnv):
             - "std": Standard score normalization using mean and standard deviation.
         """
         if type == "std":
-            score_mean = self.searchspace.get_score_mean(score_name)
-            score_std = self.searchspace.get_score_std(score_name)
+            score_mean, score_std = self.searchspace.get_score_mean_and_std(score_name)
             
             return (score_value - score_mean) / score_std
         else:
@@ -213,11 +212,10 @@ class OscarEnv(BaseNASEnv):
         """Return the info dictionary."""
         info_dict = {
             "current_network": self.current_net.architecture,
-            "test_accuracy": self.searchspace.list_to_accuracy(self.current_net.architecture),
             "training_free_score": self.current_net.fitness,
             "timestep": self.timestep_counter,
             "latency": self.searchspace.list_to_score(input_list=self.current_net.architecture, 
-                                                     score=f"{self.target_device}_latency"),
+                                                      score=f"{self.target_device}_latency"),
         }
 
         return info_dict

@@ -1,5 +1,4 @@
-import numpy as np
-from commons import BaseInterface
+from src import Base_Interface
 from .oscar import OscarEnv
 from typing import Iterable, Text, Dict
 from numpy.typing import NDArray
@@ -11,7 +10,7 @@ class MarcellaEnv(OscarEnv):
     interacts with is updated to force the agent to solve the task independently on the actual device.
     """
     def __init__(self, 
-                 searchspace_api:BaseInterface,
+                 searchspace_api:Base_Interface,
                  scores:Iterable[Text]=["naswot_score", "logsynflow_score", "skip_score"],
                  n_mods:int=1,
                  max_timesteps:int=50,
