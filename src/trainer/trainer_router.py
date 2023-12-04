@@ -1,1 +1,0 @@
-training_router = lambda x: [*x]
