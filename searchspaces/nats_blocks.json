@@ -39,5 +39,11 @@
         "nor_conv_3x3": 1.3875413333333333,
         "none": 0.170016,
         "avg_pool_3x3": 0.538656
-    }
+    },
+    "naswot_mean": 739.2,
+    "naswot_std": 99.95,
+    "logsynflow_mean": 1.754e6,
+    "logsynflow_std": 1.507e6,
+    "skip_mean": 0.4919,
+    "skip_std": 0.6075
 }
