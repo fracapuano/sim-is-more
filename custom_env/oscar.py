@@ -18,7 +18,7 @@ class OscarEnv(BaseNASEnv):
                  n_mods:int=1,
                  max_timesteps:int=50,
                  latency_cutoff:float=5.,
-                 target_device:Text="raspi4",
+                 target_device:Text="edgegpu",
                  weights:Iterable[float]=[0.6, 0.4]):
         
         self.searchspace = searchspace_api
