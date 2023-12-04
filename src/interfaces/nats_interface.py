@@ -1,6 +1,3 @@
-from ..network_utils import TinyNetwork, get_cell_based_tiny_net
-from ..training_free_scores import scores_router
-from ..trainer import training_router
 from .base_interface import Base_Interface
 from ..utils import get_project_root
 from typing import (
@@ -23,10 +20,10 @@ class NATS_Interface(Base_Interface):
     def __init__(self, 
                  datapath:str=str(get_project_root()) + "/searchspaces/nats_blocks.json",
                  dataset:str="cifar10",
-                 target_device:Text="edgegpu",
                  use_lookup_table:bool=True,
                  path_to_lookup:Optional[str]=str(get_project_root()) + "/searchspaces/nats_interface_lookuptable.json", 
-                 path_to_lookup_index:Optional[str]=str(get_project_root()) + "/searchspaces/nats_arch_index.json"):
+                 path_to_lookup_index:Optional[str]=str(get_project_root()) + "/searchspaces/nats_arch_index.json",
+                 target_device:Optional[Text]=None):
         
         # parent init, loading the datapath
         super().__init__(datapath)
@@ -100,21 +97,6 @@ class NATS_Interface(Base_Interface):
             "num_classes": self.network_numclasses,
             "arch_str": self[index]
         }
-
-    def get_network(self, index:int)->TinyNetwork:
-        """Retrieves the TinyNetwork object associated with a given index.
-
-        Args:
-            index (int): Numerical index, between 0 and self.__len__()
-
-        Returns:
-            TinyNetwork: TinyNetwork object associated with index.
-        """
-        if index < 0 or index >= len(self):
-            raise ValueError(f"Index out of bounds! Must be between 0 and {len(self)}.")
-        
-        network = get_cell_based_tiny_net(self.get_config_dictionary(index=index))
-        return network
         
     def compute_score(self, score_name:Text, index:int)->float:
         """
@@ -131,7 +113,8 @@ class NATS_Interface(Base_Interface):
             lookup_index = self.index_to_lookup_index(index=index)
             return self.lookup_table[lookup_index][self.dataset][score_name]
         else:
-            return scores_router[score_name](network_idx=index, dataset=self.dataset)
+            # return scores_router[score_name](network_idx=index, dataset=self.dataset)
+            raise NotImplementedError("Online scoring not yet implemented for NATS space.")
 
     def get_score_mean_and_std(self, score_name:Text, sample_size:Optional[int]=None)->Tuple[float, float]:
         """
@@ -150,32 +133,48 @@ class NATS_Interface(Base_Interface):
         Note:
             The score values are retrieved from each data point in the dataset and averaged.
         """
-        # when sample_size is None, the mean is calculated across the entire dataset
-        n_networks = sample_size if sample_size is not None else len(self)
         
-        if not hasattr(self, f"{score_name}_values"):
-            # randomly sample n_networks indices
-            random_indices = np.random.choice(len(self), size=n_networks, replace=False)
-            # computing the score value for each of the randomly sampled indices
-            score_values = np.zeros(n_networks)
-            for idx, i in tqdm(enumerate(random_indices), desc=f"Computing {score_name} values..."):
-                score_values[idx] = self.compute_score(score_name=score_name, index=i)
-            
-            # store these new values in the interface object
-            setattr(self, f"{score_name}_values", score_values)
+        # when not using lookup table, one needs to compute the score values
+        if not self.using_lookup:
+            # when sample_size is None, the mean is calculated across the entire dataset
+            n_networks = sample_size if sample_size is not None else len(self)
 
-        # computing the mean and std of the score values
-        if not hasattr(self, f"mean_{score_name}"):
-            setattr(self, 
-                    f"mean_{score_name}", 
-                    getattr(self, f"{score_name}_values").mean()
-                    )
+            if not hasattr(self, f"{score_name}_values"):
+                # randomly sample n_networks indices, and compute the score value once only for each of them
+                random_indices = np.random.choice(len(self), size=n_networks, replace=False)
+                # computing the score value for each of the randomly sampled indices
+                score_values = np.zeros(n_networks)
+                for idx, i in tqdm(enumerate(random_indices), desc=f"Computing {score_name} values..."):
+                    score_values[idx] = self.compute_score(score_name=score_name, index=i)
+                
+                # store these new values in the interface object
+                setattr(self, f"{score_name}_values", score_values)
+
+            # computing the mean and std of the score values
+            if not hasattr(self, f"mean_{score_name}"):
+                setattr(self, 
+                        f"mean_{score_name}", 
+                        getattr(self, f"{score_name}_values").mean()
+                        )
+            
+            if not hasattr(self, f"std_{score_name}"):
+                setattr(self, 
+                        f"std_{score_name}", 
+                        getattr(self, f"{score_name}_values").std()
+                        )
         
-        if not hasattr(self, f"std_{score_name}"):
-            setattr(self, 
-                    f"std_{score_name}", 
-                    getattr(self, f"{score_name}_values").std()
-                    )
+        else:
+            # when using the lookup table, the mean and std can be easily retrieved from the lookup table
+            if not hasattr(self, f"mean_{score_name}"):
+                setattr(self, 
+                        f"mean_{score_name}", 
+                        self._data.get(f"mean_{score_name}", -float("inf"))
+                        )
+            if not hasattr(self, f"std_{score_name}"):
+                setattr(self, 
+                        f"std_{score_name}", 
+                        self._data.get(f"std_{score_name}", -float("inf"))
+                        )
         
         return getattr(self, f"mean_{score_name}"), getattr(self, f"std_{score_name}")
 
@@ -307,10 +306,13 @@ class NATS_Interface(Base_Interface):
             return self.lookup_table[arch_index][self.dataset]["test_accuracy"]
 
         else:
+            """
             return training_router(search_space=self, 
                                    network_idx=arch_index, 
                                    dataset=self.dataset, 
                                    training_config=training_config)
+            """
+            raise NotImplementedError("Online training not yet implemented for NATS space.")
 
     def architecture_to_accuracy(self, architecture_string:str, training_config:Optional[dict]=None)->float:
         """Returns the test accuracy of an architecture string.
