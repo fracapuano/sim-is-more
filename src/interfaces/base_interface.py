@@ -263,3 +263,4 @@ class Base_Interface(ABC):
             List[Tuple[List[Text], List[int]]]: (Architecture list, index) tuple.
         """
         raise NotImplementedError("Abstract method!")
+
