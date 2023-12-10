@@ -299,8 +299,8 @@ class NATS_Interface(Base_Interface):
         Returns:
             float: Test accuracy (after 200 training epochs).
         """
-        # retrieving the architecture index associated to an input list
-        arch_index = self.list_to_index(architecture_list=input_list)
+        # retrieving the architecture index associated to an input list, ideally something like
+        arch_index = self.architecture_to_index["/".join(input_list)]
         if self.using_lookup:
             # retrieving the index associated to this particular architecture
             return self.lookup_table[arch_index][self.dataset]["test_accuracy"]
