@@ -61,7 +61,7 @@ def parse_args()->object:
     #parser.add_argument("--default", action="store_true", help="Default mode, ignore all configurations")
     parser.add_argument("--debug", action="store_true", help="Default mode, ignore all configurations")
     
-    return parser.parse_args()x1
+    return parser.parse_args()
 
 def main():
     """Performs training and logs info to wandb."""
@@ -94,7 +94,7 @@ def main():
         dataset="cifar10"
         env_name="oscar"
         searchspace="nats"
-        n_envs=1
+        n_envs=3
         train_timesteps=int(1e4)
         test_episodes=25
         evaluate_every=int(1e3)
