@@ -164,7 +164,20 @@ class NATS_Interface(Base_Interface):
                         )
         
         else:
-            # when using the lookup table, the mean and std can be easily retrieved from the lookup table
+            # training-free scores statistics can't be retrieved from the lookup table and must be computed instead
+            if score_name in ["naswot_score", "logsynflow_score", "skip_score"]:
+                if not hasattr(self, f"mean_{score_name}"):
+                    setattr(self, 
+                    f"mean_{score_name}", 
+                    np.array([self.lookup_table[i][self.dataset][score_name] for i in range(len(self))]).mean()
+                    )
+                if not hasattr(self, f"std_{score_name}"):
+                    setattr(self, 
+                    f"std_{score_name}", 
+                    np.array([self.lookup_table[i][self.dataset][score_name] for i in range(len(self))]).std()
+                    )
+
+            # when using the lookup table, the mean and std can be easily retrieved
             if not hasattr(self, f"mean_{score_name}"):
                 setattr(self, 
                         f"mean_{score_name}", 
