@@ -1,5 +1,5 @@
 """Custom callbacks to be used during training to record the learnign process."""
-import gym
+import gymnasium as gym
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 from stable_baselines3.common.evaluation import evaluate_policy
