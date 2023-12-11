@@ -57,7 +57,7 @@ def build_vec_env(
     
     Returns: 
     """
-    # define environment (on top of xi)
+    # define environment
     def make_env():
         env = copy(env_)
         """Wraps env with a Monitor object."""
