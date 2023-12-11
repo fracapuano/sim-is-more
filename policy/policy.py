@@ -5,7 +5,7 @@ This is particularly useful to test out different algorithms and training proced
 import torch
 import os
 
-import gym
+import gymnasium as gym
 from numpy.typing import NDArray
 from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.callbacks import BaseCallback
@@ -17,7 +17,7 @@ from custom_env import (
     create_epsilon_scheduler,
     create_learning_rate_scheduler
 )
-from gym import spaces
+from gymnasium import spaces
 from typing import List, Tuple, Union, Dict, Text
 
 class Policy:
