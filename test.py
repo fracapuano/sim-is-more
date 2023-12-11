@@ -4,14 +4,11 @@ import time
 import pickle
 from src import (
     seed_all, 
-    NATS_FastInterface,
-    HW_NATS_FastInterface
+    NATS_Interface,
 )
 from custom_env import (
     envs_dict,
-    hardware_agnostic_search,
-    hardware_aware_search,
-    pure_search
+    build_vec_env
 )
 import numpy as np
 
@@ -68,16 +65,16 @@ def main():
     algorithm, environment, *_ = model_path.split("/")[-1].split("_")
 
     # accessing to the env defined at the policy level
-    if environment in hardware_agnostic_search:
-        searchspace_interface = NATS_FastInterface(dataset=dataset)
-    elif environment in hardware_aware_search:
-        searchspace_interface = HW_NATS_FastInterface(dataset=dataset)
-    else: 
-        raise ValueError(f"{environment} not in {hardware_agnostic_search + hardware_aware_search}")
+    searchspace_interface = NATS_Interface(dataset=dataset)
 
     # create env (gym.Env)
     env = envs_dict[environment.lower()](searchspace_api=searchspace_interface)
-
+    # wrap env into a vectorized environment
+    env = build_vec_env(
+        env_=env,
+        n_envs=1 # only one environment is needed for testing
+    )
+    
     # instantiate a testing suite
     policy = Policy(
         algo=algorithm,
@@ -98,7 +95,7 @@ def main():
         done = False
         obs = env.reset() # Reset environment to initial state
         # save initial network
-        initial_net = env.current_net.architecture if environment in pure_search else searchspace_interface.decode_architecture(obs)
+        initial_net = env.get_attr("current_net")[0].architecture
         initial_nets.append(initial_net)
 
         episode_return = 0
@@ -110,7 +107,7 @@ def main():
 
             episode_return += reward
         
-        terminal_net = env.current_net.architecture if environment in pure_search else searchspace_interface.decode_architecture(obs)
+        terminal_net = env.get_attr("current_net")[0].architecture
         terminal_nets.append(terminal_net)
         
         durations[ep] = time.time()-start
@@ -121,23 +118,21 @@ def main():
         best_individual = max(list(env.history.keys()), key=lambda k: env.history[k].fitness)
         print(f"Fittest individual (ever): {best_individual}")
     else: 
-        best_individual = max(env.population, key=lambda ind: ind.fitness).genotype if environment not in pure_search \
-                          else env.current_net.architecture
+        best_individual = env.get_attr("current_net")[0].architecture
         print(f"Fittest individual in terminal population: {best_individual}")
     
     print("Average episode return {:.4g}".format(returns.mean()))
     if fittest_ever:
-        print("Final individual test accuracy: {:.5g}".format(env.searchspace.\
+        print("Final individual test accuracy: {:.5g}".format(searchspace_interface.\
                                                               architecture_to_accuracy(best_individual)))
     else:
-        print("Final individual test accuracy: {:.5g}".format(env.searchspace.\
+        print("Final individual test accuracy: {:.5g}".format(searchspace_interface.\
                                                               list_to_accuracy(best_individual)))
-    
-    if environment in hardware_aware_search:
-        print("Final latency: {:.5g}".format(
-            env.searchspace.list_to_score(best_individual, f"{target_device}_latency")))
-    
-    if args.save_results: 
+
+    print("Final latency: {:.5g}".format(
+        searchspace_interface.list_to_score(best_individual, f"{target_device}_latency")))
+
+    if args.save_results:
         # saving all final networks obtained
         with open("TestResults.pkl", "wb") as results:
             pickle.dump(list(zip(initial_nets, terminal_nets)), results)

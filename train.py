@@ -1,7 +1,7 @@
 import torch
+import os
 from policy.policy import Policy
 from policy import (
-    Hybrid_PolicyCallback, 
     PureRL_PolicyCallback, 
     MultiTask_Callback
 )
@@ -92,7 +92,7 @@ def main():
     if args.debug: 
         algorithm="PPO"
         dataset="cifar10"
-        env_name="oscar"
+        env_name="nasenv"
         searchspace="nats"
         n_envs=3
         train_timesteps=int(1e4)
@@ -103,9 +103,9 @@ def main():
         epsilon_scheduling="sawtooth"
         use_wandb_callback=True
         multitask=False
-        parallel_envs=True
+        parallel_envs=False
         target_device="pixel3"
-        resume_training=True
+        resume_training=False
         model_path="models/PPO_oscar_2e6_raspi4_6040.zip"
 
     # sanity check on multitasking concordance with environment
@@ -123,7 +123,7 @@ def main():
     # set seed for reproducibility
     seed_all(seed=seed)
     # to allow multiprocessing of various envs
-    torch.set_num_threads(n_envs)  
+    torch.set_num_threads(n_envs)
 
     # create env (gym.Env)
     env = envs_dict[env_name.lower()](searchspace_api=searchspace_interface)
@@ -156,7 +156,7 @@ def main():
                    f"{algorithm.upper()}_{env.name}_{to_scientific_notation(train_timesteps)}"
     
     # silencing wandb output
-    # os.environ["WANDB_SILENT"] = "true" 
+    os.environ["WANDB_SILENT"] = "true" 
 
     run = wandb.init(
         project="Debug-Oscar",
