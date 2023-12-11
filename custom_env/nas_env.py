@@ -1,33 +1,36 @@
-from gym import spaces
+import gymnasium as gym
+from gymnasium import spaces
 import numpy as np
 from itertools import chain
 from numpy.typing import NDArray
-from .base_env import BaseNASEnv
 from src import Base_Interface
 from .utils import NASIndividual
-from typing import Iterable, Tuple, Text
+from typing import Iterable, Tuple, Text, Optional
 
-class NASEnv(BaseNASEnv): 
+class NASEnv(gym.Env): 
     """
-    gym.Env for pure-RL-based NAS. Architectures are evaluated using training-free metrics only.
+    gym.Env for RL-based NAS. Architectures are evaluated using training-free metrics only.
 
-    This env is mainly inspired from two works: 
-    1. Neural Architecture Search with Reinforcement Learning, https://arxiv.org/pdf/1611.01578.pdf
-    2. FreeREA: Training-Free Evolution-Based Architecture Search, https://arxiv.org/pdf/2207.05135.pdf
+    This env is mainly inspired by: 
+    1. "Neural Architecture Search with Reinforcement Learning", https://arxiv.org/pdf/1611.01578.pdf
+    2. "FreeREA: Training-Free Evolution-Based Architecture Search", https://arxiv.org/pdf/2207.05135.pdf
     """
-    def __init__(self, 
+    def __init__(self,
                  searchspace_api:Base_Interface,
                  scores:Iterable[Text]=["naswot_score", "logsynflow_score", "skip_score"], 
                  n_mods:int=1,
                  max_timesteps:int=50):
-        
+        # the NAS searchspace is defined at the searchspace_api level
         self.searchspace = searchspace_api
+        # the score names are used to evaluate each candidate architecture in a training-free fashion
         self.score_names = scores
+        # this variable defines the number of modifications the controller can perform at once
         self.n_mods = n_mods
+        # this variable defines the maximum number of timesteps per episode
         self.max_timesteps = max_timesteps
 
         """
-        Each individual network can be univoquely identified with `m` (clearly enough, `m = m(searchspace)`) characters. 
+        Each individual network can be univoquely identified with `m` (`m = m(searchspace)`) characters. 
         Each of these characters can take any of the `n` operations in the search-space, thus each individual can be 
         perfectly represented via integer encoding.
         In this case, observations would be `(m,)` tensors whose values would range in [0, n-1] and
@@ -51,7 +54,7 @@ class NASEnv(BaseNASEnv):
         )
         self.action_space = spaces.MultiDiscrete(action_space)
         
-        # initializes population, timestep counter and current maximal fitness
+        # initializes s_0, timestep counter 
         self.reset()
     
     @property
@@ -78,9 +81,7 @@ class NASEnv(BaseNASEnv):
             - "std": Standard score normalization using mean and standard deviation.
         """
         if type == "std":
-            score_mean = self.searchspace.get_score_mean(score_name)
-            score_std = self.searchspace.get_score_std(score_name)
-            
+            score_mean, score_std = self.searchspace.get_score_mean_and_std(score_name)
             return (score_value - score_mean) / score_std
         else:
             raise ValueError(f"Normalization type {type} not available!")
@@ -197,38 +198,38 @@ class NASEnv(BaseNASEnv):
 
         return info_dict
 
-    def is_done(self)->bool: 
-        """Returns `True` at episode termination and `False` before."""
+    def is_truncated(self)->bool:
+        """
+        Returns `True` if the episode has been truncated and `False` otherwise.
+        Child classes might override this method to implement different truncation conditions (e.g. based on certain scores)
+        """
         return self.timestep_counter + 1 >= self.max_timesteps
-    
-    def reset(self)->NDArray:
-        """Resets custom env attributes."""
-        self._observation = self.observation_space.sample()
-        self.update_current_net()
-        self.timestep_counter= 0
 
-        return self._get_obs()
-    
+    def is_terminated(self)->bool: 
+        """Returns `True` at episode truncation and `False` otherwise."""
+        return self.timestep_counter + 1 >= self.max_timesteps
+        
     def get_reward(self, new_individual:NASIndividual)->float:
         """
         Compute the reward associated to the modification operation.
         Here, the reward is defined as the gain in fitness between the original and new invidual.
         """
         new_individual_fitness, current_individual_fitness = new_individual.fitness, self.current_net.fitness
-        # we want to reward actions that increase the value of fitness (proxy for increase in test accuracy)
+        # we want to reward actions that increase the value of fitness (proxy for increase in networks test accuracy)
         return new_individual_fitness - current_individual_fitness
     
-    def step(self, action:NDArray)->Tuple[NDArray, float, bool, dict]: 
+    def step(self, action:NDArray)->Tuple[NDArray, float, bool, bool, dict]: 
         """Steps the episode having a given action.
         
         Args:
             action (NDArray): Action to be performed.
         
         Returns:
-            Tuple[NDArray, float, bool, dict]: New observation (after having performed the action), 
-                                               reward value,
-                                               done signal (True at episode termination), 
-                                               info dictionary
+            Tuple[NDArray, float, bool, bool, dict]: New observation (after having performed the action), 
+                                                     Reward value,
+                                                     Termination signal (True at episode terminal state)
+                                                     Truncation signal (True if the episode has been truncated)
+                                                     Info dictionary
         """
         
         # increment timestep counter (used to declare episode termination)
@@ -254,8 +255,10 @@ class NASEnv(BaseNASEnv):
         reinforced_individual = self.fitness_function(reinforced_individual)
         # compute the reward associated with producing reinforced_individual
         reward = self.get_reward(new_individual=reinforced_individual)
-        # check whether or not the episode is terminated
-        terminated = self.is_done()
+        # check whether or not the episode is in its terminal state
+        terminated = self.is_terminated()
+        # check whether or not the episode has been truncated
+        truncated = self.is_truncated()
         
         # overwrite current obs
         self._observation = new_individual_encoded
@@ -265,5 +268,13 @@ class NASEnv(BaseNASEnv):
         # retrieve info
         info = self._get_info()
 
-        return self._observation, reward, terminated, info
+        return self._observation, reward, terminated, truncated, info
 
+    def reset(self, seed:Optional[int]=None)->NDArray:
+        """Resets custom env attributes."""
+        super().reset(seed=seed)
+        self._observation = self.observation_space.sample()
+        self.update_current_net()
+        self.timestep_counter= 0
+
+        return self._get_obs(), self._get_info()
