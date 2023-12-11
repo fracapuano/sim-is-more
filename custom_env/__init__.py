@@ -1,4 +1,3 @@
-from .base_env import *
 from .nas_env import *
 from .oscar import *
 from .marcella import *
