@@ -34,7 +34,7 @@ def main():
     durations = []
     for _ in range(args.n_episodes): 
         done = False
-        obs = env.reset() # Reset environment to initial state
+        obs, _ = env.reset() # Reset environment to initial state
             
         start = time.time()
         while not done:  # Until the episode is over
