@@ -1,7 +1,7 @@
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
-from .base_env import BaseNASEnv
+import gymnasium as gym
 from copy import deepcopy as copy
 import numpy as np
 from scipy import signal
@@ -43,7 +43,7 @@ class NASIndividual:
 
 
 def build_vec_env(
-        env_:BaseNASEnv, 
+        env_:gym.Env, 
         n_envs:int=1, 
         subprocess:bool=True)->VecEnv:
     """Simply builds an env using default configuration for the environment.
