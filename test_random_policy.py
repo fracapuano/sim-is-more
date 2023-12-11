@@ -39,11 +39,13 @@ def main():
         start = time.time()
         while not done:  # Until the episode is over
             action = env.action_space.sample()	# Sample random action            
-            observation, reward, done, info = env.step(action)	# Step the simulator to the next timestep
+            observation, reward, terminated, truncated, info = env.step(action)	# Step the simulator to the next timestep
             
             if args.verbose: 
                 pprint(info)
-        
+
+            done = terminated or truncated
+            
         end = time.time()
         print(f"Episode {_} duration: "+"{:.4f}".format(end - start))
         durations.append(end - start)
