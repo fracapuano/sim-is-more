@@ -1,16 +1,16 @@
-from gym import spaces
+from gymnasium import spaces
 import numpy as np
 from src import Base_Interface
-from .base_env import BaseNASEnv
+from .nas_env import NASEnv
 from .utils import NASIndividual
 from typing import Iterable, Text, Tuple, Dict
 from numpy.typing import NDArray
 from itertools import chain
 
-class OscarEnv(BaseNASEnv): 
+class OscarEnv(NASEnv):
     """
-    gym.Env for Hardware-aware pure-RL-based NAS. Architectures are evaluated using training-free metrics 
-    only as well as specific hardware related metrics.
+    gym.Env for Hardware-aware RL-based NAS. 
+    Architectures are evaluated using training-free and measured latency, as per hardware-related metrics.
     """
     def __init__(self, 
                  searchspace_api:Base_Interface,
