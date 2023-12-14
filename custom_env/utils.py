@@ -2,7 +2,7 @@ from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
 import gymnasium as gym
-from copy import deepcopy as copy
+from copy import copy
 import numpy as np
 from scipy import signal
 
@@ -42,6 +42,10 @@ class NASIndividual:
         self.update_idx()
 
 
+from line_profiler import LineProfiler
+lp = LineProfiler() 
+
+
 def build_vec_env(
         env_:gym.Env, 
         n_envs:int=1, 
@@ -55,7 +59,8 @@ def build_vec_env(
                                      the usual DummyVecEnv. Defaults to True.
         device (str, optional): Device on which to run the environment. Defaults to "cpu".
     
-    Returns: 
+    Returns:
+        (VecEnv): Vectorized environment.
     """
     # define environment
     def make_env():
@@ -64,12 +69,15 @@ def build_vec_env(
         wrapped_env = Monitor(env=env)
         return wrapped_env
 
+    lp_wrapper = lp(make_env)
+
     # vectorized environment, wrapped with Monitor
     if subprocess:
         envs = SubprocVecEnv([make_env for _ in range(n_envs)])
     else: 
-        envs = DummyVecEnv([make_env for _ in range(n_envs)])
+        envs = DummyVecEnv([lp_wrapper for _ in range(n_envs)])
 
+    lp.print_stats()
     return envs
 
 def create_epsilon_scheduler(

@@ -2,9 +2,8 @@
 from stable_baselines3.common.callbacks import BaseCallback
 import numpy as np
 from stable_baselines3.common.vec_env import VecEnv
-from typing import Text, Iterable
 
-class MultiTask_Callback(BaseCallback): 
+class ChangeDevice_Callback(BaseCallback): 
     """Custom callback inheriting from `BaseCallback`.
 
     :param verbose: (int) Verbosity level 0: not output 1: info 2: debug.

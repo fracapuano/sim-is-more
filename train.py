@@ -3,7 +3,7 @@ import os
 from policy.policy import Policy
 from policy import (
     PureRL_PolicyCallback, 
-    MultiTask_Callback
+    ChangeDevice_Callback
 )
 from stable_baselines3.common.callbacks import (
     CallbackList, 
@@ -51,12 +51,10 @@ def parse_args()->object:
     parser.add_argument("--offline", action="store_true", help="Wandb does not sync anything to the cloud")
     parser.add_argument("--epsilon-scheduling", default="const", type=str, help="Whether or not to use scheduling for the epsilon parameter within PPO.\
                                                                                 Accepted schedulers are ['exp', 'sawtooth', 'sine']. min_eps, max_eps = 0.1, 0.3")
-    parser.add_argument("--lr-scheduling", default="const", type=str, help="Whether or not to use scheduling for the learning rate in the RL algorithm.\
-                                                                           Accepted schedulers are ['exp', 'sawtooth', 'sine']. min_lr, max_lr = 3e-4, 3e-3")
     parser.add_argument("--use-wandb-callback", default=False, help="Whether or not to append the SB3 Wandb callback to the list of used callbacks.")
     parser.add_argument("--parallel-envs", default=True, type=boolean_string, help="Whether or not to train the agent using envs in multiprocessing")
-    parser.add_argument("--multitask", default=False, type=boolean_string, help="Whether or not to train the agent in a Multitask setting. \
-                                                                                 Devices probed amongst ['raspi4', 'edgegpu', 'eyeriss']")
+    parser.add_argument("--synthetic-devices", default=True, type=boolean_string, help="Whether or not to train the agent using synthetic devices.\
+                                                                                        In v1, simply triggers a change in the underlying lookup table for the interface object used.")
 
     #parser.add_argument("--default", action="store_true", help="Default mode, ignore all configurations")
     parser.add_argument("--debug", action="store_true", help="Default mode, ignore all configurations")
@@ -84,15 +82,14 @@ def main():
     n_envs=args.n_envs
     offline=args.offline
     epsilon_scheduling=args.epsilon_scheduling
-    lr_scheduling=args.lr_scheduling
     use_wandb_callback=args.use_wandb_callback
     parallel_envs=args.parallel_envs
-    multitask=args.multitask
+    use_synthetic_devices=args.synthetic_devices
 
     if args.debug: 
         algorithm="PPO"
         dataset="cifar10"
-        env_name="nasenv"
+        env_name="marcella"
         searchspace="nats"
         n_envs=3
         train_timesteps=int(1e4)
@@ -107,18 +104,15 @@ def main():
         target_device="pixel3"
         resume_training=False
         model_path="models/PPO_oscar_2e6_raspi4_6040.zip"
+        use_synthetic_devices=True
 
-    # sanity check on multitasking concordance with environment
-    if multitask and env_name.lower()!="marcella": 
-        raise ValueError(f"MultiTasking not supported for {env_name}! Only supported for 'marcella' env")
 
-    if searchspace.lower() == "nats": 
-        searchspace_interface = NATS_Interface(dataset=dataset)
-    elif searchspace.lower() == "fbnet":
-        # searchspace_interface = FBNet_Interface(dataset=dataset)
-        pass
+    if searchspace.lower() == "nats":
+            searchspace_interface = NATS_Interface(dataset=dataset, use_synthetic_devices=use_synthetic_devices)
     else:
-        raise ValueError(f"{env_name} not in ['nats', 'fbnet']")
+        raise NotImplementedError(
+            f"Searchspace {searchspace} not implemented yet. Searchspaces that will be implemented: ['nats', 'fbnet']. FBNet to do."
+        )
     
     # set seed for reproducibility
     seed_all(seed=seed)
@@ -183,11 +177,11 @@ def main():
     evaluation_callback = EveryNTimesteps(n_steps=evaluate_every, callback=inner_callback)
     callback_list = [evaluation_callback]
 
-    if multitask:
-        changedevice_callback = MultiTask_Callback()
+    if env.name == "marcella":
+        changedevice_callback = ChangeDevice_Callback()
         # every 5th percent of the training procedure this procedure will change the underlying target device
-        multitask_callback = EveryNTimesteps(n_steps=int(train_timesteps/20), callback=changedevice_callback)
-        callback_list.append(multitask_callback)
+        marcella_callback = EveryNTimesteps(n_steps=int(train_timesteps/20), callback=changedevice_callback)
+        callback_list.append(marcella_callback)
 
     # instantiate a policy object
     policy = Policy(

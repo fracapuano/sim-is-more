@@ -16,14 +16,21 @@ from tqdm import tqdm
 class NATS_Interface(Base_Interface):
     """
     NATS-specific search space interface.
+    Also implements hardware-awareness through the use of a lookup table.
     """
+    path_to_synthetic_devices = str(get_project_root()) + "/searchspaces/nats_interface_syntheticdevices_lookuptable.json"
+    # reading the synthetic-devices lookup table
+    with open(path_to_synthetic_devices, "r") as lookup_file:
+        synthetic_lookup_table = {int(k): v for k, v in json.load(lookup_file).items()}
+
     def __init__(self, 
                  datapath:str=str(get_project_root()) + "/searchspaces/nats_blocks.json",
                  dataset:str="cifar10",
                  use_lookup_table:bool=True,
                  path_to_lookup:Optional[str]=str(get_project_root()) + "/searchspaces/nats_interface_lookuptable.json", 
                  path_to_lookup_index:Optional[str]=str(get_project_root()) + "/searchspaces/nats_arch_index.json",
-                 target_device:Optional[Text]=None):
+                 target_device:Optional[Text]=None,
+                 use_synthetic_devices:bool=False):
         
         # parent init, loading the datapath
         super().__init__(datapath)
@@ -37,8 +44,14 @@ class NATS_Interface(Base_Interface):
                 "If using lookup table, path to lookup table must be provided! Provided: {}".format(path_to_lookup)
             )
         elif path_to_lookup is not None:
-            with open(path_to_lookup, "r") as lookup_file:
-                self.lookup_table = {int(k): v for k, v in json.load(lookup_file).items()}
+            # either loading the lookup table or the synthetic devices lookup table
+            if not use_synthetic_devices:
+                with open(path_to_lookup, "r") as lookup_file:
+                    self.lookup_table = {int(k): v for k, v in json.load(lookup_file).items()}
+            else:
+                # using a synthetic lookup table stored in memory once only
+                self.lookup_table = self.synthetic_lookup_table
+
             with open(path_to_lookup_index, "r") as lookup_index_file:
                 self.architecture_to_index = json.load(lookup_index_file)
 
