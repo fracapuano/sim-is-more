@@ -199,14 +199,15 @@ class NASEnv(gym.Env):
         return info_dict
 
     def is_truncated(self)->bool:
-        """
-        Returns `True` if the episode has been truncated and `False` otherwise.
-        Child classes might override this method to implement different truncation conditions (e.g. based on certain scores)
-        """
+        """Returns `True` at episode truncation and `False` otherwise."""
         return self.timestep_counter + 1 >= self.max_timesteps
 
     def is_terminated(self)->bool: 
-        """Returns `True` at episode truncation and `False` otherwise."""
+        """
+        Returns `True` if the episode has been terminated and `False` otherwise.
+        Child classes might override this method to implement different termination conditions
+        (e.g. based on certain scores).
+        """
         return self.timestep_counter + 1 >= self.max_timesteps
         
     def get_reward(self, new_individual:NASIndividual)->float:
