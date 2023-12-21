@@ -3,7 +3,7 @@ import numpy as np
 from src import Base_Interface
 from .nas_env import NASEnv
 from .utils import NASIndividual
-from typing import Iterable, Text, Tuple, Dict
+from typing import Iterable, Text, Tuple, Dict, Optional
 from numpy.typing import NDArray
 from itertools import chain
 
@@ -221,19 +221,32 @@ class OscarEnv(NASEnv):
         return info_dict
 
     def is_done(self)->bool: 
-        """Returns `True` at episode termination and `False` before."""
+        """
+        Returns `True` at episode termination and `False` before.
+        DEPRECATED: use `is_terminated` instead.
+        """
+        Warning("is_done is deprecated, use is_terminated instead")
         self.timesteps_over = self.timestep_counter >= self.max_timesteps
         self.latency_over = self._observation["latency_value"].item() >= self.max_latency
 
         return self.timesteps_over or self.latency_over
 
-    def reset(self)->NDArray:
+    def is_terminated(self)->bool:
+        """
+        Returns `True` if the episode is terminated and `False` otherwise.
+        Episodes are terminated when an agent produces an architecture with a latency value greater than the cutoff.
+        """
+        return self._observation["latency_value"].item() >= self.max_latency
+
+    def reset(self, seed:Optional[int]=None)->NDArray:
         """Resets custom env attributes."""
+        super().reset(seed=seed)
+
         self._observation = self.observation_space.sample()
         self.update_current_net()
         self.timestep_counter= 0
 
-        return self._get_obs()
+        return self._get_obs(), self._get_info()
 
     def get_reward(self, new_individual:NASIndividual)->float:
         """
@@ -293,8 +306,10 @@ class OscarEnv(NASEnv):
             )
         
         # check whether or not the episode is terminated
-        terminated = self.is_done()
+        terminated = self.is_terminated()
+        # check whether or not the episode is truncated
+        truncated = self.is_truncated()
         # retrieve info
         info = self._get_info()
 
-        return self._observation, reward, terminated, info
+        return self._observation, reward, terminated, truncated, info

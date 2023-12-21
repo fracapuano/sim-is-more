@@ -1,6 +1,6 @@
 from src import Base_Interface
 from .oscar import OscarEnv
-from typing import Iterable, Text, Dict
+from typing import Iterable, Text, Dict, Optional
 from numpy.typing import NDArray
 
 class MarcellaEnv(OscarEnv): 
@@ -86,13 +86,15 @@ class MarcellaEnv(OscarEnv):
         """
         self.device_freeze = not self.device_freeze
     
-    def reset(self)->NDArray:
+    def reset(self, seed:Optional[int]=None)->NDArray:
         """Resets custom env attributes."""
+        super().reset(seed=seed)
+
         self._observation = self.observation_space.sample()
         self.change_device()
         self.update_current_net()
 
         self.timestep_counter= 0
 
-        return self._get_obs()
+        return self._get_obs(), self._get_info()
     
