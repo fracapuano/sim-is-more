@@ -45,10 +45,6 @@ class NASIndividual:
         self.update_idx()
 
 
-from line_profiler import LineProfiler
-lp = LineProfiler() 
-
-
 def build_vec_env(
         env_:gym.Env, 
         n_envs:int=1, 
@@ -72,15 +68,12 @@ def build_vec_env(
         wrapped_env = Monitor(env=env)
         return wrapped_env
 
-    lp_wrapper = lp(make_env)
-
     # vectorized environment, wrapped with Monitor
     if subprocess:
         envs = SubprocVecEnv([make_env for _ in range(n_envs)])
     else: 
-        envs = DummyVecEnv([lp_wrapper for _ in range(n_envs)])
+        envs = DummyVecEnv([make_env for _ in range(n_envs)])
 
-    lp.print_stats()
     return envs
 
 def create_epsilon_scheduler(
