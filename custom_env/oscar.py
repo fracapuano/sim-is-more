@@ -44,7 +44,7 @@ class OscarEnv(NASEnv):
                     len(self.searchspace.all_ops) for _ in range(self.searchspace.architecture_len)
                     ]), 
                 # latency is always less than 100 ms on all devices considered here
-                "latency_value": spaces.Box(low=0, high=100, shape=(1,))
+                "latency_value": spaces.Box(low=0, high=float("inf"), shape=(1,))
             }
         )
 
@@ -62,9 +62,6 @@ class OscarEnv(NASEnv):
             for _ in range(self.n_mods)])
         )
         self.action_space = spaces.MultiDiscrete(action_space)
-        
-        # initializes population, timestep counter and current maximal fitness
-        self.reset()
 
     @property
     def name(self): 

@@ -5,8 +5,11 @@ import gymnasium as gym
 from copy import copy
 import numpy as np
 from scipy import signal
-
+from scipy.stats import truncnorm
 from typing import List, Text, Dict
+from numpy.typing import NDArray
+from abc import ABC, abstractmethod
+
 
 class NASIndividual:
     """
@@ -42,10 +45,6 @@ class NASIndividual:
         self.update_idx()
 
 
-from line_profiler import LineProfiler
-lp = LineProfiler() 
-
-
 def build_vec_env(
         env_:gym.Env, 
         n_envs:int=1, 
@@ -69,15 +68,12 @@ def build_vec_env(
         wrapped_env = Monitor(env=env)
         return wrapped_env
 
-    lp_wrapper = lp(make_env)
-
     # vectorized environment, wrapped with Monitor
     if subprocess:
         envs = SubprocVecEnv([make_env for _ in range(n_envs)])
     else: 
-        envs = DummyVecEnv([lp_wrapper for _ in range(n_envs)])
+        envs = DummyVecEnv([make_env for _ in range(n_envs)])
 
-    lp.print_stats()
     return envs
 
 def create_epsilon_scheduler(
@@ -165,3 +161,37 @@ def create_learning_rate_scheduler(
 
     return scheduler
 
+class ProbabilityDistribution(ABC):
+    """
+    Class used to represent a probability distribution.
+    This is used to sample latency values for blocks in the network.
+    """
+
+    @abstractmethod
+    def sample(self) -> NDArray[np.float64]:
+        """Sample k values from the distribution."""
+        raise NotImplementedError("This method should be implemented in a subclass!")
+
+class TruncatedNormalDistribution(ProbabilityDistribution):
+    def __init__(self,
+                 mean:float=0,
+                 std:float=1,
+                 lower_bound:float=1e-3,
+                 upper_bound:float=1e3):
+        
+        # storing the distribution
+        self.distribution = truncnorm
+        # storing mean and std
+        self.mean, self.std = mean, std
+
+        # storing clipping ranges
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
+    
+    def sample(self, k:int=1):
+        return truncnorm.rvs(
+            a=self.lower_bound, 
+            b=self.upper_bound, 
+            loc=self.mean,
+            scale=self.std,
+            size=k)

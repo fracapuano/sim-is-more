@@ -224,6 +224,9 @@ def main():
         print(f"Training completed! Training output available at: {best_model_path}.zip")
         print(f"Avg Return over test episodes: {round(avg_return, 2)} ± {round(std_return, 2)}")
 
+    # exit from wandb run
+    wandb.finish()
+
 if __name__=="__main__":
     main()
 

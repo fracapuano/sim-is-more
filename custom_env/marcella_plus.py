@@ -1,0 +1,273 @@
+from src import Base_Interface
+from .oscar import OscarEnv
+from typing import (
+    Iterable, 
+    Text, 
+    Optional, 
+    Dict, 
+    Tuple, 
+    List
+)
+from numpy.typing import NDArray
+from .utils import (
+    ProbabilityDistribution, 
+    NASIndividual,
+    TruncatedNormalDistribution
+)
+import numpy as np
+import random
+from gymnasium import spaces
+from operator import itemgetter
+
+class MarcellaPlusEnv(OscarEnv): 
+    """
+    gym.Env for Multi-task Hardware-aware pure-RL-based NAS. Architectures are evaluated using training-free metrics 
+    only as well as specific hardware related metrics. During the training procedure, the target device the agent
+    interacts with is updated to force the agent to solve the task independently on the actual device.
+    """
+    def __init__(self, 
+                 searchspace_api:Base_Interface,
+                 blocks_distribution:Optional[Dict[Text, ProbabilityDistribution]]=None,
+                 scores:Iterable[Text]=["naswot_score", "logsynflow_score", "skip_score"],
+                 n_mods:int=1,
+                 max_timesteps:int=50,
+                 weights:Iterable[float]=[0.6, 0.4],
+                 n_samples:Optional[int]=None,
+                 custom_devices:Optional[Iterable[Text]]=None,
+                 cutoff_percentile:float=85.):
+                
+        super().__init__(
+            searchspace_api=searchspace_api,
+            scores=scores,
+            n_mods=n_mods,
+            max_timesteps=max_timesteps,
+            latency_cutoff=float("inf"),  # hack to overwrite the latency cutoff at each (first) reset
+            target_device=None,  # removing target device, devices are simulated here
+            weights=weights,
+        )
+
+        """
+        This variable stores the distribution of latencies for each block.
+        At each call of the `reset()` method, blocks' latencies are sampled from said distributions
+
+        If None, the distribution of latencies is reconstruced accessing all devices directly from the 
+        searchspace object.
+        """
+        if blocks_distribution is None:
+            # retrieving the measurements of all the devices from the searchspace object
+            device_measurements = self.searchspace.blocks_latency(custom_devices=custom_devices)
+
+            self.blocks_distribution = {
+                op: TruncatedNormalDistribution(
+                    mean=device_measurements[op].mean(), 
+                    std=device_measurements[op].std()
+                )
+                for op in self.searchspace.all_ops
+            }
+        else:
+            self.blocks_distribution = blocks_distribution
+        """
+        This variable stores the number of networks to be sampled at each call of the `reset()` method.
+        If None, the number of networks to be sampled is equal to the number of networks in the searchspace.
+        Networks are sampled to compute the mean and std of the hardware cost associated to the device simulated with
+        this reset method.
+        """
+        self.n_samples = len(self.searchspace) if n_samples is None else n_samples
+
+        """
+        This variable stores the percentile of the hardware cost distribution to be used as latency cutoff.
+        If an agent produces a network with hardware cost higher than the latency cutoff, the episode is terminated.
+        """
+        self.cutoff_percentile = cutoff_percentile
+
+    @property
+    def name(self): 
+        return "marcella-plus"
+    
+    def normalize_hardware_cost(self, hardware_cost:float, type:Text="std")->float:
+        """
+        Z-Normalizes the hardware cost.
+
+        Args:
+            hardware_cost (float): Hardware cost value to be normalized.
+
+        Returns:
+            float: hardware cost value.
+        """
+        if type == "std":
+            return (hardware_cost - self.mean_hardware_cost) / self.std_hardware_cost
+
+        else:
+            msg = \
+            f"""
+            Normalization type {type} not implemented. Currently supported types are:
+            - std: Z-normalization
+            """
+            raise NotImplementedError(msg)
+
+    def compute_hardware_cost(self, architecture_list:List[Text])->float:
+        """
+        Computes the hardware cost of a given architecture.
+
+        Args:
+            architecture_list (List[Text]): Architecture to be evaluated.
+
+        Returns:
+            float: Hardware cost of the architecture.
+        """
+        # [op~block, op2~block2, ...] -> [op, op2, ...]
+        get_architecture_ops = lambda a: list(map(lambda x: x.split("~")[0], a))
+        
+        return sum(itemgetter(*get_architecture_ops(architecture_list))(self.blocks_latency))
+
+    # TODO: Change how latency is computed making it use the blocks_latency attribute of self
+    def fitness_function(self, individual:NASIndividual)->NASIndividual: 
+        """
+        Directly overwrites the fitness attribute for a given individual.
+
+        Args: 
+            individual (NASIndividual): Individual to score.
+
+        Returns:
+            NASIndividual: Individual, with fitness field.
+        """
+        if individual.fitness is None:  # None at initialization only
+            scores = np.array([
+                self.normalize_score(
+                    score_value=self.searchspace.list_to_score(input_list=individual.architecture, 
+                                                               score=score), 
+                    score_name=score
+                )
+                for score in self.score_names
+            ])
+            # computing hardware performance of current individual
+            hardware_performance = np.array([
+                self.normalize_hardware_cost(
+                    self.compute_hardware_cost(architecture_list=individual.architecture)
+                )
+            ])
+            # individual fitness is a convex combination of multiple scores
+            network_score = (np.ones_like(scores) / len(scores)) @ scores
+            network_hardware_performance = (np.ones_like(hardware_performance) / len(hardware_performance)) @ hardware_performance
+            
+            # in the hardware aware contest performance is in a direct tradeoff with hardware performance
+            individual._fitness = np.array([network_score, -network_hardware_performance]) @ self.weights
+        
+        return individual
+
+    def _get_info(self)->dict:
+        """
+        Returns a dictionary containing information about the current state of the environment.
+
+        Returns:
+            dict: Information dictionary.
+        """
+        info = {
+            "timestep": self.timestep_counter,
+            "current_net": self.current_net,
+            "latency_cutoff": self.latency_cutoff,
+            "mean_hardware_cost": self.mean_hardware_cost,
+            "std_hardware_cost": self.std_hardware_cost,
+        }
+        return info | self.blocks_latency
+
+
+    def reset(self, seed:Optional[int]=None)->NDArray:
+        """Resets custom env attributes."""
+        # sampling a new starting observation
+        self._observation = self.observation_space.sample()
+        
+        # sampling a new set of latencies for each block
+        self.blocks_latency = {
+            op: self.blocks_distribution[op].sample().item() for op in self.searchspace.all_ops
+        }
+        # TODO: storing the blocks' latencies in the observation
+        # self._observation["blocks_latency"] = self.blocks_latency
+
+        # random choices
+        choices = random.choices(self.searchspace, k=self.n_samples)
+
+        # apply preprocessing operations to the random networks sampled
+        random_nets = map(lambda a: self.searchspace.get_architecture_ops(self.searchspace.architecture_to_list(a)), 
+                          choices)
+        
+        # computing hardware cost samples
+        hardware_measures = [
+            self.compute_hardware_cost(net) 
+            for net in random_nets
+        ]
+        # storing mean and std of hardware cost in the observation
+        self.mean_hardware_cost = np.mean(hardware_measures)
+        self.std_hardware_cost = np.std(hardware_measures)
+        
+        # setting the latency cutoff to the cutoff percentile-th of the hardware measures
+        self.latency_cutoff = np.percentile(hardware_measures, self.cutoff_percentile)
+        
+        # resetting the latency cutoff
+        self.update_current_net()
+        self.timestep_counter= 0
+
+        return self._get_obs(), self._get_info()
+    
+    def is_terminated(self)->bool:
+        """
+        Checks whether or not the episode is terminated.
+        MarcellaPlusEnv is terminated when the latency of the current network is higher than the latency cutoff.
+        """
+        return bool(self.compute_hardware_cost(self.current_net.architecture) > self.latency_cutoff)
+
+    # TODO: Change how latency is computed making it use the blocks_latency attribute of self
+    def step(self, action:NDArray)->Tuple[NDArray, float, bool, dict]: 
+        """Steps the episode having a given action.
+        
+        Args:
+            action (NDArray): Action to be performed.
+        
+        Returns:
+            Tuple[NDArray, float, bool, dict]: New observation (after having performed the action), 
+                                               reward value,
+                                               done signal (True at episode termination), 
+                                               info dictionary
+        """
+        
+        # increment timestep counter (used to declare episode termination)
+        self.timestep_counter += 1
+
+        # split action into a list of 2-item tuples (as per the definition of action space)
+        mods_list = [(action[i], action[i+1]) for i in range(0, len(action), 2)]
+        original_encoded = self._observation["architecture"]
+        # copying parent encoding before performing mutations - copy=True is slow, using a = I @ b instead
+        new_individual_encoded = np.diag(np.ones_like(original_encoded)) @ original_encoded
+        # perform all the modifications in `mods_list`
+        for mod in mods_list:
+            new_individual_encoded = \
+                self.perform_modification(new_individual=new_individual_encoded, modification=mod)
+        
+        # creating new individual with reinforced-controlled genotype
+        reinforced_individual = NASIndividual(architecture=None,
+                                              index=None,
+                                              architecture_string_to_idx=self.searchspace.architecture_to_index)
+        # mounting the architecture on the new individual
+        reinforced_individual = self.mount_architecture(reinforced_individual, new_individual_encoded)
+        # score individual based on its test accuracy
+        reinforced_individual = self.fitness_function(reinforced_individual)
+        # compute the reward associated with producing reinforced_individual
+        reward = self.get_reward(new_individual=reinforced_individual)
+        
+        # overwrite current obs architecture
+        self._observation["architecture"] = new_individual_encoded
+        # update consequently the current net field
+        self.update_current_net()
+        # update current obs latency value
+        self._observation["latency_value"] = \
+            np.array([self.compute_hardware_cost(architecture_list=self.current_net.architecture)], dtype=np.float32)
+
+        # check whether or not the episode is terminated
+        terminated = self.is_terminated()
+        # check if the episode is truncated
+        truncated = self.is_truncated()
+        # retrieve info
+        info = self._get_info()
+
+        return self._observation, reward, terminated, truncated, info
+

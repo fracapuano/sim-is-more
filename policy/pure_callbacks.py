@@ -1,12 +1,11 @@
 """Custom callbacks to be used during training to record the learnign process."""
-import gymnasium as gym
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 from stable_baselines3.common.evaluation import evaluate_policy
 import wandb
 import numpy as np
 
-from typing import Tuple, Text, List
+from typing import Text, List
 
 class EpisodeStatsAgg:
     def __init__(self, 
@@ -55,7 +54,7 @@ class PureRL_PolicyCallback(BaseCallback):
     """
     def __init__(
             self, 
-            env:Tuple[gym.Env, VecEnv], 
+            env:VecEnv, 
             render:bool=False,
             verbose:int=0,
             n_eval_episodes:int=50, 

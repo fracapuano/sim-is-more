@@ -4,7 +4,8 @@ from typing import (
     Text, 
     Optional, 
     Tuple,
-    List
+    List,
+    Dict
 )
 import json
 from numpy.typing import NDArray
@@ -66,6 +67,36 @@ class NATS_Interface(Base_Interface):
     @property
     def dataset(self)->str:
         return self._dataset
+    
+    def blocks_latency(self, custom_devices:Optional[List[Text]]=None)->Dict[Text, NDArray]:
+        """Returns the latencies measurements of each operation across `devices`
+        
+        Args:
+            devices (Optional[List[Text]]): List of devices to consider. 
+                                            When None uses all the devices available for the searchspace considered. 
+                                            To specify which devices you want to be considering, just specify them passing
+                                            a customized list of devices. Defaults to None.
+
+        Returns:
+            Dict[Text, NDArray]: Dictionary containing the latency measurements of each operation across `devices`.
+        """
+        # retrieving the devices to consider
+        devices = custom_devices if custom_devices is not None else self._data["devices"]
+        return {
+            op: np.array([self._data[f"{device}_latency"][op] for device in devices])
+            for op in self._data["operations"]
+        }
+
+    def get_architecture_ops(self, architecture_list:List[Text])->List[Text]:
+        """Returns the operations in a given architecture list.
+        
+        Args:
+            architecture_list (List[Text]): List of operations in the architecture.
+
+        Returns:
+            List[Text]: List of operations in the architecture.
+        """
+        return [op.split("~")[0] for op in architecture_list]
 
     def __getitem__(self, index:int)->str:
         """Retrives the architecture string which is associated with a given index.
