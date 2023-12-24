@@ -120,7 +120,6 @@ class MarcellaPlusEnv(OscarEnv):
         
         return sum(itemgetter(*get_architecture_ops(architecture_list))(self.blocks_latency))
 
-    # TODO: Change how latency is computed making it use the blocks_latency attribute of self
     def fitness_function(self, individual:NASIndividual)->NASIndividual: 
         """
         Directly overwrites the fitness attribute for a given individual.
@@ -181,7 +180,7 @@ class MarcellaPlusEnv(OscarEnv):
         self.blocks_latency = {
             op: self.blocks_distribution[op].sample().item() for op in self.searchspace.all_ops
         }
-        # TODO: storing the blocks' latencies in the observation
+        # FIXME: storing the blocks' latencies in the observation
         # self._observation["blocks_latency"] = self.blocks_latency
 
         # random choices
@@ -216,7 +215,6 @@ class MarcellaPlusEnv(OscarEnv):
         """
         return bool(self.compute_hardware_cost(self.current_net.architecture) > self.latency_cutoff)
 
-    # TODO: Change how latency is computed making it use the blocks_latency attribute of self
     def step(self, action:NDArray)->Tuple[NDArray, float, bool, dict]: 
         """Steps the episode having a given action.
         
