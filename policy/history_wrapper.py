@@ -49,6 +49,9 @@ class TransitionsHistoryWrapper(gym.Wrapper):
                 (to account for the "no modification" action).
                 Starting from -1, it allows to represent empty networks.
             """
+            self.empty_architecture_placeholder = len(self.env.searchspace.all_ops) + 1
+            self.empty_action_placeholder = self.env.searchspace.architecture_len + 2, len(self.env.searchspace.all_ops) + 1
+            
             # handle to create the MultiDiscrete space for the architectures
             architectures_list = [
                                     [
@@ -71,12 +74,12 @@ class TransitionsHistoryWrapper(gym.Wrapper):
                 # allowing for negative values allows to have empty input nodes in the policy network
                     "architectures": spaces.MultiDiscrete(
                             list(chain.from_iterable(architectures_list)),
-                            start=[-1 for _ in range(self.env.searchspace.architecture_len * self.context_window)]
+                            # start=[-1 for _ in range(self.env.searchspace.architecture_len * self.context_window)]
                     ),
-                    "latency_values": spaces.Box(low=-1, high=float("inf"), shape=(self.context_window,)),
+                    "latency_values": spaces.Box(low=0., high=float("inf"), shape=(self.context_window,)),
                     "actions_performed": spaces.MultiDiscrete(
                             list(chain.from_iterable([val for sublist in actions_list for val in sublist])),
-                            start=[-1 for _ in range(2 * self.env.n_mods * self.history_len)]
+                            # start=[-1 for _ in range(2 * self.env.n_mods * self.history_len)]
                     )
             })
 
@@ -89,14 +92,21 @@ class TransitionsHistoryWrapper(gym.Wrapper):
             self.observations_deque.appendleft(
                 OrderedDict({
                     # "architecture": self.empty_placeholder * np.ones(self.env.searchspace.architecture_len),
-                    "architecture": -1 * np.ones(self.env.searchspace.architecture_len, dtype=np.int64), 
-                    "latency_value": -1 * np.ones(1, dtype=np.float32)
+                    "architecture": (self.empty_architecture_placeholder - 1) * np.ones(self.env.searchspace.architecture_len, dtype=np.int64), 
+                    #"latency_value": -1 * np.ones(1, dtype=np.float32)
+                    "latency_value": 0 * np.ones(1, dtype=np.float32)
                 })
             )
             # representing empty actions with choosing self.empty_placeholder 
             self.actions_deque.appendleft(
                 # (-1, self.empty_placeholder)
-                -1 * np.ones(2 * self.env.n_mods, dtype=np.int64)
+                np.array(
+                    [
+                        (self.empty_action_placeholder[0] - 1, self.empty_action_placeholder[1] - 1) 
+                        for _ in range(self.env.n_mods)
+                    ], 
+                    dtype=np.int64).\
+                    flatten()
             )
 
         return self._stack_buffers_to_obs(obs), info
