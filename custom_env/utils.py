@@ -118,48 +118,6 @@ def create_epsilon_scheduler(
 
     return scheduler
 
-def create_learning_rate_scheduler(
-        max_lr:float=3e-3, 
-        min_lr:float=3e-4,
-        spike_every:float=0.05,
-        kind:Text="exp"
-        ):
-    
-    if kind.lower()=="exp":
-        # starting_point = (1, start_epsilon); ending_point = (0, end_epsilon)
-        a, b = min_lr, max_lr/min_lr
-        # Create the scheduler function, which depends on the fraction of remaining timesteps here to be observed
-        scheduler = lambda percent_training_left: a * (b ** percent_training_left)
-    
-    elif kind.lower()=="sawtooth":
-        # starting_point = (1, start_epsilon); ending_point = (0, end_epsilon)
-        a, b = min_lr, max_lr/min_lr
-        # this creates the sawtooth list of values to use as values for epsilon
-        n_spikes = int(1/spike_every)
-        # Create the scheduler function, which depends on the fraction of remaining timesteps here to be observed
-        def scheduler(percent_training_left):
-            # checking if current portion of training is a multiple of a spike point
-            exponential_peak = a * (b ** percent_training_left)
-            sawtooth_peak = 0.1 * signal.sawtooth(2 * np.pi * n_spikes * percent_training_left).item()
-            # this returns either the sawtooth peak or the exponential value
-            return max(exponential_peak, exponential_peak + sawtooth_peak)
-    
-    elif kind.lower()=="sine":
-         # starting_point = (1, start_epsilon); ending_point = (0, end_epsilon)
-        a, b = min_lr, max_lr/min_lr
-        # this creates the sawtooth list of values to use as values for epsilon
-        n_spikes = int(1/spike_every)
-        # Create the scheduler function, which depends on the fraction of remaining timesteps here to be observed
-        def scheduler(percent_training_left):
-            # checking if current portion of training is a multiple of a spike point
-            exponential_peak = a * (b ** percent_training_left)
-            sine_peak = 0.1 * np.sin(2 * np.pi * n_spikes * percent_training_left).item()
-            # this returns either the sawtooth peak or the exponential value
-            return max(exponential_peak, exponential_peak + sine_peak)
-    else:
-        raise ValueError(f"Scheduler type: {kind} not implemented! Implemented schedulers: ['exp', 'sine', 'sawtooth']")
-
-    return scheduler
 
 class ProbabilityDistribution(ABC):
     """
