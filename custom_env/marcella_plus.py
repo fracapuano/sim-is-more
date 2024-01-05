@@ -16,10 +16,11 @@ from .utils import (
 )
 import numpy as np
 import random
-from gymnasium import spaces
+from scipy.stats import percentileofscore
 from operator import itemgetter
 
-class MarcellaPlusEnv(OscarEnv): 
+
+class MarcellaPlusEnv(OscarEnv):
     """
     gym.Env for Multi-task Hardware-aware pure-RL-based NAS. Architectures are evaluated using training-free metrics 
     only as well as specific hardware related metrics. During the training procedure, the target device the agent
@@ -45,13 +46,12 @@ class MarcellaPlusEnv(OscarEnv):
             target_device=None,  # removing target device, devices are simulated here
             weights=weights,
         )
-
         """
         This variable stores the distribution of latencies for each block.
         At each call of the `reset()` method, blocks' latencies are sampled from said distributions
 
-        If None, the distribution of latencies is reconstruced accessing all devices directly from the 
-        searchspace object.
+        If custom_devices is None, the distribution of latencies is reconstruced accessing all devices directly 
+        from the searchspace object and fitting a truncated normal distribution on the latencies of each block.
         """
         if blocks_distribution is None:
             # retrieving the measurements of all the devices from the searchspace object
@@ -86,7 +86,7 @@ class MarcellaPlusEnv(OscarEnv):
     
     def normalize_hardware_cost(self, hardware_cost:float, type:Text="std")->float:
         """
-        Z-Normalizes the hardware cost.
+        Applies some transformation to the hardware cost.
 
         Args:
             hardware_cost (float): Hardware cost value to be normalized.
@@ -120,7 +120,6 @@ class MarcellaPlusEnv(OscarEnv):
         
         return sum(itemgetter(*get_architecture_ops(architecture_list))(self.blocks_latency))
 
-    # TODO: Change how latency is computed making it use the blocks_latency attribute of self
     def fitness_function(self, individual:NASIndividual)->NASIndividual: 
         """
         Directly overwrites the fitness attribute for a given individual.
@@ -131,27 +130,33 @@ class MarcellaPlusEnv(OscarEnv):
         Returns:
             NASIndividual: Individual, with fitness field.
         """
-        if individual.fitness is None:  # None at initialization only
-            scores = np.array([
-                self.normalize_score(
-                    score_value=self.searchspace.list_to_score(input_list=individual.architecture, 
-                                                               score=score), 
-                    score_name=score
-                )
-                for score in self.score_names
-            ])
-            # computing hardware performance of current individual
-            hardware_performance = np.array([
-                self.normalize_hardware_cost(
-                    self.compute_hardware_cost(architecture_list=individual.architecture)
-                )
-            ])
-            # individual fitness is a convex combination of multiple scores
-            network_score = (np.ones_like(scores) / len(scores)) @ scores
-            network_hardware_performance = (np.ones_like(hardware_performance) / len(hardware_performance)) @ hardware_performance
-            
-            # in the hardware aware contest performance is in a direct tradeoff with hardware performance
-            individual._fitness = np.array([network_score, -network_hardware_performance]) @ self.weights
+        scores = np.array([
+            self.normalize_score(
+                score_value=self.searchspace.list_to_score(input_list=individual.architecture, 
+                                                            score=score), 
+                score_name=score
+            )
+            for score in self.score_names
+        ])
+        # computing hardware performance of current individual
+        hardware_performance = np.array([
+            self.normalize_hardware_cost(
+                self.compute_hardware_cost(architecture_list=individual.architecture)
+            )
+        ])
+
+        # individual fitness is a convex combination of multiple scores
+        network_score = (np.ones_like(scores) / len(scores)) @ scores
+        network_hardware_performance = \
+            (np.ones_like(hardware_performance) / len(hardware_performance)) @ hardware_performance
+        
+        # saving the different scores per each individual
+        individual._scores = \
+            {s_name: s for s_name, s in zip(self.score_names, scores)} | \
+            {p_name: p for p_name, p in zip(["standardized-latency"], hardware_performance)}
+
+        # in the hardware aware contest performance is in a direct tradeoff with hardware performance
+        individual._fitness = np.array([network_score, -network_hardware_performance]) @ self.weights
         
         return individual
 
@@ -162,15 +167,21 @@ class MarcellaPlusEnv(OscarEnv):
         Returns:
             dict: Information dictionary.
         """
+        # storing the current network's hardware cost
+        current_net_hardware_cost = self.compute_hardware_cost(self.current_net.architecture)
+
         info = {
             "timestep": self.timestep_counter,
             "current_net": self.current_net,
             "latency_cutoff": self.latency_cutoff,
-            "mean_hardware_cost": self.mean_hardware_cost,
-            "std_hardware_cost": self.std_hardware_cost,
+            "current_net_latency": current_net_hardware_cost,
+            "current_net_latency_percentile": \
+                self.get_percentile_of_hw_cost(current_net_hardware_cost),
+            "blocks_latency": self.blocks_latency,
+            "current_net_scores": self.current_net._scores
         }
-        return info | self.blocks_latency
-
+                
+        return info
 
     def reset(self, seed:Optional[int]=None)->NDArray:
         """Resets custom env attributes."""
@@ -181,7 +192,7 @@ class MarcellaPlusEnv(OscarEnv):
         self.blocks_latency = {
             op: self.blocks_distribution[op].sample().item() for op in self.searchspace.all_ops
         }
-        # TODO: storing the blocks' latencies in the observation
+        # FIXME: possibly storing the blocks' latencies in the observation
         # self._observation["blocks_latency"] = self.blocks_latency
 
         # random choices
@@ -192,16 +203,19 @@ class MarcellaPlusEnv(OscarEnv):
                           choices)
         
         # computing hardware cost samples
-        hardware_measures = [
+        self.hardware_measures = [
             self.compute_hardware_cost(net) 
             for net in random_nets
         ]
         # storing mean and std of hardware cost in the observation
-        self.mean_hardware_cost = np.mean(hardware_measures)
-        self.std_hardware_cost = np.std(hardware_measures)
+        self.mean_hardware_cost = np.mean(self.hardware_measures)
+        self.std_hardware_cost = np.std(self.hardware_measures)
+
+        # defining a function handle to compute the percentile of a given hardware cost
+        self.get_percentile_of_hw_cost = lambda x: percentileofscore(self.hardware_measures, x)
         
         # setting the latency cutoff to the cutoff percentile-th of the hardware measures
-        self.latency_cutoff = np.percentile(hardware_measures, self.cutoff_percentile)
+        self.latency_cutoff = np.percentile(self.hardware_measures, self.cutoff_percentile)
         
         # resetting the latency cutoff
         self.update_current_net()
@@ -216,7 +230,6 @@ class MarcellaPlusEnv(OscarEnv):
         """
         return bool(self.compute_hardware_cost(self.current_net.architecture) > self.latency_cutoff)
 
-    # TODO: Change how latency is computed making it use the blocks_latency attribute of self
     def step(self, action:NDArray)->Tuple[NDArray, float, bool, dict]: 
         """Steps the episode having a given action.
         
@@ -260,7 +273,7 @@ class MarcellaPlusEnv(OscarEnv):
         self.update_current_net()
         # update current obs latency value
         self._observation["latency_value"] = \
-            np.array([self.compute_hardware_cost(architecture_list=self.current_net.architecture)], dtype=np.float32)
+            np.array([self.current_net._scores["latency"]], dtype=np.float32)
 
         # check whether or not the episode is terminated
         terminated = self.is_terminated()
