@@ -1,3 +1,4 @@
+from custom_env.utils import NASIndividual
 from src import Base_Interface
 from .oscar import OscarEnv
 from typing import (
@@ -229,6 +230,10 @@ class MarcellaPlusEnv(OscarEnv):
         MarcellaPlusEnv is terminated when the latency of the current network is higher than the latency cutoff.
         """
         return bool(self.compute_hardware_cost(self.current_net.architecture) > self.latency_cutoff)
+    
+    def get_reward(self, new_individual: NASIndividual) -> float:
+        """The reward is the fitness of the new generated individual."""
+        return new_individual.fitness
 
     def step(self, action:NDArray)->Tuple[NDArray, float, bool, dict]: 
         """Steps the episode having a given action.
@@ -273,7 +278,7 @@ class MarcellaPlusEnv(OscarEnv):
         self.update_current_net()
         # update current obs latency value
         self._observation["latency_value"] = \
-            np.array([self.current_net._scores["latency"]], dtype=np.float32)
+            np.array([self.compute_hardware_cost(architecture_list=self.current_net.architecture)], dtype=np.float32)
 
         # check whether or not the episode is terminated
         terminated = self.is_terminated()
