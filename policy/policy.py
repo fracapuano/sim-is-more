@@ -14,8 +14,7 @@ from stable_baselines3 import A2C, PPO
 from sb3_contrib import TRPO
 from src import get_project_root, to_scientific_notation
 from custom_env import (
-    create_epsilon_scheduler,
-    create_learning_rate_scheduler
+    create_epsilon_scheduler
 )
 from gymnasium import spaces
 from typing import List, Tuple, Union, Dict, Text
@@ -252,12 +251,7 @@ class Policy:
         # overwrites the clip range attribute within self.model
         self.model.clip_range = create_epsilon_scheduler(kind=kind)
     
-    def set_lr_scheduler(self, kind:Text="exp"):
-        """Sets the learning rate scheduler"""
-        # overwrites the clip range attribute within self.model
-        self.model.learning_rate = create_learning_rate_scheduler(kind=kind)
-    
     @staticmethod
     def load_full_state():
         raise ValueError('Use the constructor with load_from_pathname parameter')
-        
+
