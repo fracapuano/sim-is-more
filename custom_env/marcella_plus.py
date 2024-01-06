@@ -230,10 +230,6 @@ class MarcellaPlusEnv(OscarEnv):
         MarcellaPlusEnv is terminated when the latency of the current network is higher than the latency cutoff.
         """
         return bool(self.compute_hardware_cost(self.current_net.architecture) > self.latency_cutoff)
-    
-    def get_reward(self, new_individual: NASIndividual) -> float:
-        """The reward is the fitness of the new generated individual."""
-        return new_individual.fitness
 
     def step(self, action:NDArray)->Tuple[NDArray, float, bool, dict]: 
         """Steps the episode having a given action.
