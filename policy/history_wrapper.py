@@ -7,6 +7,7 @@ import numpy as np
 from itertools import chain
 from collections import OrderedDict
 from collections import deque
+from copy import copy
 
 class TransitionsHistoryWrapper(gym.Wrapper):
     def __init__(self, env:gym.Env, history_len:int=1):
@@ -108,16 +109,15 @@ class TransitionsHistoryWrapper(gym.Wrapper):
                     dtype=np.int64).\
                     flatten()
             )
-
+        
         return self._stack_buffers_to_obs(obs), info
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
-        self.observations_deque.appendleft(obs)
+        self.observations_deque.appendleft(copy(obs))
         self.actions_deque.appendleft(action)
         
-        obs = self._stack_buffers_to_obs(obs)
-        return obs, reward, terminated, truncated, info
+        return self._stack_buffers_to_obs(obs), reward, terminated, truncated, info
 
     def _stack_buffers_to_obs(self, obs):
         """
