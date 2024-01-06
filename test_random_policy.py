@@ -15,7 +15,7 @@ def parse_args()->object:
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default="cifar10", type=str, help="Dataset to be considered. One in ['cifar10', 'cifar100', 'ImageNet16-120'].s")
-    parser.add_argument("--env", default="oscar", type=str, help="Environment to test random policy on.")
+    parser.add_argument("--env", default="marcella-plus", type=str, help="Environment to test random policy on.")
     parser.add_argument("--verbose", action="store_true", help="Whether or not to print out the info dictionary.")
     parser.add_argument("--n-episodes", default=30, type=int, help="Number of episodes to use.")
     
@@ -35,17 +35,19 @@ def main():
     for _ in range(args.n_episodes): 
         done = False
         obs, info = env.reset() # Reset environment to initial state
-            
+        
         start = time.time()
         while not done:  # Until the episode is over
             action = env.action_space.sample()	# Sample random action            
             observation, reward, terminated, truncated, info = env.step(action)	# Step the simulator to the next timestep
             
-            if args.verbose: 
+            done = terminated or truncated
+            if args.verbose and done:
+                print("*** Episode finished ***")
+                print("Episode finished due to {}.".format("truncation" if truncated else "termination")) 
                 pprint(info)
 
-            done = terminated or truncated
-            
+
         end = time.time()
         print(f"Episode {_} duration: "+"{:.4f}".format(end - start))
         durations.append(end - start)
