@@ -244,12 +244,12 @@ class Policy:
         """Saves the model at `pathname`"""
         self.model.save(pathname)
 
-    def set_epsilon_scheduler(self, kind:Text="exp"):
+    def set_epsilon_scheduler(self, kind:Text="exp", **kwargs):
         """Sets the scheduler for the PPO algorithm"""
         if self.algo.lower() != "ppo": 
             raise ValueError("Epsilon-scheduling currently only supported for the PPO algorithm.")
         # overwrites the clip range attribute within self.model
-        self.model.clip_range = create_epsilon_scheduler(kind=kind)
+        self.model.clip_range = create_epsilon_scheduler(kind=kind, **kwargs)
     
     @staticmethod
     def load_full_state():
