@@ -1,5 +1,5 @@
 """General Gym Wrapper (https://www.gymlibrary.dev/api/wrappers/#general-wrappers)
-    for stacking previous actions in the current observation vector
+    for stacking previous observations and actions in the current observation vector
 """
 import gymnasium as gym
 from gymnasium import spaces
