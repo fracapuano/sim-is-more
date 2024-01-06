@@ -1,4 +1,4 @@
-from abc import abstractmethod, abstractproperty, ABC
+from abc import abstractmethod, ABC
 import json
 from typing import (
     List, 
