@@ -1,11 +1,9 @@
-gym
-matplotlib
-numpy
-pandas
-sb3_contrib
-scipy
-stable_baselines3
-torch
-tqdm
-tensorboard
-wandb
+stable-baselines3 >= 2.2.1
+gymnasium >= 0.29.1
+torch >= 2.1.2
+tensorboard >= 2.15.1
+wandb >= 0.16.1
+sb3-contrib >= 2.2.1
+rich >= 13.7.0
+tqdm >= 4.66.1
+SciPy >= 1.11.4
