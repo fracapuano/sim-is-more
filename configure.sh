@@ -19,13 +19,12 @@ if conda env list | grep -q "oscarenv"; then
 else
     # Create the Conda environment
     conda create -n oscarenv python=3.11 -y
-
+    
     # Activate the environment
     conda activate oscarenv
-
-    # Install packages from poetry project
+    
+    # Install packages from requirements.txt
     pip install -r requirements.txt
-
+    
     echo "The 'oscarenv' environment has been created and the relevant dependancies have been installed."
 fi
-
