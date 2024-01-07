@@ -12,6 +12,18 @@ from numpy.typing import NDArray
 from itertools import chain
 import numpy as np
 from tqdm import tqdm
+from scipy.stats import percentileofscore
+
+
+class LatencyReadings:
+    """Latency readings for each device. This class is only used to store the latency readings."""
+    def percentile_to_value(self, device:str, percentile:int=50)->float:
+        """Returns the latency percentile-value for a given device."""
+        return np.percentile(getattr(self, f"{device}_readings"), percentile)
+
+    def value_to_percentile(self, device:str, value:float)->float:
+        """Returns the latency percentile for a given device."""
+        return percentileofscore(getattr(self, f"{device}_readings"), value)
 
 
 class NATS_Interface(Base_Interface):
@@ -46,6 +58,18 @@ class NATS_Interface(Base_Interface):
 
             with open(path_to_lookup_index, "r") as lookup_index_file:
                 self.architecture_to_index = json.load(lookup_index_file)
+
+            # storing the latency readings in a dedicated class
+            self.LatencyReadings = LatencyReadings()
+
+            for device in self._data["devices"]:
+                setattr(self.LatencyReadings, 
+                        f"{device}_readings", 
+                        [
+                            self.lookup_table[i][dataset][f"{device}_latency"] 
+                            for i in range(len(self.lookup_table))
+                        ]
+                )
 
         # routing the number of classes based on datasets
         if dataset == "cifar10": 
