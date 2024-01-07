@@ -23,10 +23,10 @@ else
     # Activate the environment
     conda activate oscarenv
 
-    # Install packages from requirements.txt
+    # Install packages from poetry project
     pip install poetry
     poetry install
 
     echo "The 'oscarenv' environment has been created and the relevant dependancies have been installed."
+fi
 
-    
