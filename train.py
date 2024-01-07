@@ -1,25 +1,26 @@
-import torch
 import os
-from policy.policy import Policy
-from policy import (
-    PureRL_PolicyCallback, 
-    ChangeDevice_Callback
-)
-from stable_baselines3.common.callbacks import (
-    CallbackList, 
-    EveryNTimesteps
-)
 import wandb
-from wandb.integration.sb3 import WandbCallback
+import torch
 import argparse
-from custom_env import (
-    envs_dict, 
-    build_vec_env
+from policy import (
+    PeriodicEvalCallback, 
+    ChangeDevice_Callback,
+    TransitionsHistoryWrapper
 )
 from src import (
     NATS_Interface,
     to_scientific_notation, 
     seed_all
+)
+from custom_env import (
+    envs_dict, 
+    build_vec_env
+)
+from policy.policy import Policy
+from wandb.integration.sb3 import WandbCallback
+from stable_baselines3.common.callbacks import (
+    CallbackList, 
+    EveryNTimesteps
 )
 
 def boolean_string(s):
@@ -33,29 +34,40 @@ def parse_args()->object:
         (object): args parser
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument("--algorithm", default="PPO", type=str, help="RL Algorithm. One in ['ppo', 'trpo', 'a2c']")
+    """The following args help define the scope of the problem to be solved."""
     parser.add_argument("--dataset", default="cifar10", type=str, help="Dataset on which to run the search. One in ['cifar10', 'cifar100', 'imagenet']")
-    parser.add_argument("--env", default="oscar", type=str, help=f"Environment to be used. One in {list(envs_dict.keys())}")
-    parser.add_argument("--searchspace", default="nats", type=str, help=f"Searchspace to be used. One in ['nats', 'fbnet']")
-    parser.add_argument("--target-device", default="raspi4", type=str, help="Target device (for hardware aware algorithms only)")
+    parser.add_argument("--searchspace", default="nats", type=str, 
+                        choices=["nats"], help=f"Searchspace to be used. One in ['nats']")  # fbnet will follow
+    parser.add_argument("--target-device", default="edgegpu", 
+                        choices=["edgegpu", "raspi4", "pixel3", "eyeriss", "fpga"], type=str, help="Target device to be used.")
+    
+    """The following args help define the training procedure."""
+    parser.add_argument("--algorithm", default="PPO", type=str, 
+                        choices=["ppo", "trpo", "a2c"], help="RL Algorithm. One in ['ppo', 'trpo', 'a2c']")
+    parser.add_argument("--env", default="oscar", type=str,
+                        choices=list(envs_dict.keys()), help=f"Environment to be used. One in {list(envs_dict.keys())}")
     parser.add_argument("--verbose", default=0, type=int, help="Verbosity value")
     parser.add_argument("--train-timesteps", default=1e5, type=float, help="Number of timesteps to train the RL algorithm with")
-    parser.add_argument("--evaluation-frequency", default=1e4, type = float, help="Frequency with which to evaluate policy against random fair opponent")
-    parser.add_argument("--test-episodes", default=25, type=int, help="Number of test matches the agent plays during periodic evaluation")
-    parser.add_argument("--resume-training", action="store_true", help="Whether or not load and keep train an already trained model")
-    parser.add_argument("--model-path", default="models/", type=str, help="Path to which the model to incrementally train is stored")
+    parser.add_argument("--evaluation-frequency", default=1e4, type = float, help="Frequency with which to evaluate policy during training.")
+    parser.add_argument("--history-size", default=5, type=int, help="Number of previous states to be used in history-based policy")
+    parser.add_argument("--test-episodes", default=25, type=int, help="Number of test episodes carried out during periodic evaluation")
     parser.add_argument("--seed", default=777, type=int, help="Random seed setted")
     parser.add_argument("--gamma", default=0.6, type=float, help="Discount factor")
     parser.add_argument("--learning-rate", default=3e-4, type=float, help="Learning rate for Deep RL training")
     parser.add_argument("--n-envs", default=1, type=int, help="Number of different envs to create at training time")
-    parser.add_argument("--offline", action="store_true", help="Wandb does not sync anything to the cloud")
-    parser.add_argument("--epsilon-scheduling", default="const", type=str, help="Whether or not to use scheduling for the epsilon parameter within PPO.\
-                                                                                Accepted schedulers are ['exp', 'sawtooth', 'sine']. min_eps, max_eps = 0.1, 0.3")
-    parser.add_argument("--use-wandb-callback", default=False, help="Whether or not to append the SB3 Wandb callback to the list of used callbacks.")
     parser.add_argument("--parallel-envs", default=True, type=boolean_string, help="Whether or not to train the agent using envs in multiprocessing")
-    parser.add_argument("--synthetic-devices", default=True, type=boolean_string, help="Whether or not to train the agent using synthetic devices.\
-                                                                                        In v1, simply triggers a change in the underlying lookup table for the interface object used.")
-
+    parser.add_argument("--offline", action="store_true", help="Wandb does not sync anything to the cloud")
+    parser.add_argument("--epsilon-scheduling", default="const", type=str, 
+                        choices=["exp", "sawtooth", "sine"], help="Whether or not to use scheduling for the epsilon parameter within PPO. \
+                                                                   Accepted schedulers are ['exp', 'sawtooth', 'sine']")
+    parser.add_argument("--min-eps", default=0.1, type=float, help="Minimum value for epsilon in epsilon scheduling")
+    parser.add_argument("--max-eps", default=0.3, type=float, help="Maximum value for epsilon in epsilon scheduling")
+    parser.add_argument("--use-wandb-callback", default=False, help="Whether or not to append the SB3 Wandb callback to the list of used callbacks.")
+    
+    """The following args are used to resume training from checkpoints."""
+    parser.add_argument("--resume-training", action="store_true", help="Whether or not load and keep train an already trained model")
+    parser.add_argument("--model-path", default="models/", type=str, help="Path to which the model to incrementally train is stored")
+    
     #parser.add_argument("--default", action="store_true", help="Default mode, ignore all configurations")
     parser.add_argument("--debug", action="store_true", help="Default mode, ignore all configurations")
     
@@ -65,50 +77,66 @@ def main():
     """Performs training and logs info to wandb."""
     args = parse_args()
 
-    algorithm=args.algorithm
-    dataset=args.dataset
-    env_name=args.env
-    searchspace=args.searchspace
-    target_device=args.target_device
-    verbose=args.verbose
-    train_timesteps=int(args.train_timesteps)
-    evaluate_every=int(args.evaluation_frequency)
-    test_episodes=int(args.test_episodes)
-    resume_training=args.resume_training
-    model_path=args.model_path
-    seed=args.seed
-    GAMMA=args.gamma
-    learning_rate=args.learning_rate
-    n_envs=args.n_envs
-    offline=args.offline
-    epsilon_scheduling=args.epsilon_scheduling
-    use_wandb_callback=args.use_wandb_callback
-    parallel_envs=args.parallel_envs
-    use_synthetic_devices=args.synthetic_devices
+    # unpacking args
+    args = parse_args()
 
-    if args.debug: 
-        algorithm="PPO"
-        dataset="cifar10"
-        env_name="marcella"
-        searchspace="nats"
-        n_envs=3
-        train_timesteps=int(1e4)
-        test_episodes=25
-        evaluate_every=int(1e3)
-        verbose=1
-        offline=True
-        epsilon_scheduling="sawtooth"
-        use_wandb_callback=True
-        multitask=False
-        parallel_envs=False
-        target_device="pixel3"
-        resume_training=False
-        model_path="models/PPO_oscar_2e6_raspi4_6040.zip"
-        use_synthetic_devices=True
+    # Unpacking args in the same order as they are defined in parse_args
+    dataset = args.dataset
+    searchspace = args.searchspace
+    target_device = args.target_device
 
+    algorithm = args.algorithm
+    env_name = args.env
+    verbose = args.verbose
+    train_timesteps = int(args.train_timesteps)
+    evaluate_every = int(args.evaluation_frequency)
+    history_size = args.history_size
+    test_episodes = int(args.test_episodes)
+    seed = args.seed
+    GAMMA = args.gamma
+    learning_rate = args.learning_rate
+    n_envs = args.n_envs
+    parallel_envs = args.parallel_envs
+    offline = args.offline
+    epsilon_scheduling = args.epsilon_scheduling
+    min_eps = args.min_eps
+    max_eps = args.max_eps
+    use_wandb_callback = args.use_wandb_callback
+
+    resume_training = args.resume_training
+    model_path = args.model_path
+
+    if args.debug:
+        # Debug mode settings in the same order
+        dataset = "cifar10"
+        searchspace = "nats"
+        target_device = "edgegpu"
+        algorithm = "PPO"
+        env_name = "oscar"
+        verbose = 1
+        train_timesteps = int(1_000)
+        evaluate_every = int(10)
+        history_size = 5  # Default value or specify as needed
+        test_episodes = 25
+        seed = 777  # Default value or specify as needed
+        GAMMA = 0.6  # Default value or specify as needed
+        learning_rate = 3e-4  # Default value or specify as needed
+        n_envs = 3
+        parallel_envs = False
+        offline = False
+        epsilon_scheduling = "const"
+        min_eps = 0.1  # Default value or specify as needed
+        max_eps = 0.3  # Default value or specify as needed
+        use_wandb_callback = True
+        # resume_training and model_path can be set as required
+        # resume_training=False
+        # model_path="models/PPO_oscar_2e6_raspi4_6040.zip"
+
+    # silencing wandb output
+    # os.environ["WANDB_SILENT"] = "true" 
 
     if searchspace.lower() == "nats":
-            searchspace_interface = NATS_Interface(dataset=dataset, use_synthetic_devices=use_synthetic_devices)
+            searchspace_interface = NATS_Interface(dataset=dataset)
     else:
         raise NotImplementedError(
             f"Searchspace {searchspace} not implemented yet. Searchspaces that will be implemented: ['nats', 'fbnet']. FBNet to do."
@@ -124,6 +152,10 @@ def main():
 
     # changing the target device based on user input
     env.target_device = target_device
+
+    # wrapping env in a history wrapper when needed
+    if env.name == "marcella-plus":
+        env = TransitionsHistoryWrapper(env=env, history_size=history_size)
     
     # build the envs according to spec
     envs = build_vec_env(
@@ -149,8 +181,6 @@ def main():
                    f"/gamma={GAMMA}/seed={seed}/"+\
                    f"{algorithm.upper()}_{env.name}_{to_scientific_notation(train_timesteps)}"
     
-    # silencing wandb output
-    os.environ["WANDB_SILENT"] = "true" 
 
     run = wandb.init(
         project="Debug-Oscar",
@@ -161,13 +191,10 @@ def main():
     )
     
     # best models are saved in models - when specialized for target hardware are stored in specific subfolders
-    best_model_path = f"models/{target_device}/{run.name}"
-
-    if multitask:
-        best_model_path = "models/marcella/" + f"{target_device}/{run.name}"
+    best_model_path = f"models/{env_name}/{target_device}/{run.name}"
 
     # this callback is wrapped in `EveryNTimesteps`
-    inner_callback = PureRL_PolicyCallback(
+    inner_callback = PeriodicEvalCallback(
         env=envs,
         n_eval_episodes=test_episodes, 
         best_model_path=best_model_path
@@ -179,8 +206,8 @@ def main():
 
     if env.name == "marcella":
         changedevice_callback = ChangeDevice_Callback()
-        # every 5th percent of the training procedure this procedure will change the underlying target device
-        marcella_callback = EveryNTimesteps(n_steps=int(train_timesteps/20), callback=changedevice_callback)
+        # every 1 percent of the training procedure this procedure will change the underlying target device
+        marcella_callback = EveryNTimesteps(n_steps=int(train_timesteps/100), callback=changedevice_callback)
         callback_list.append(marcella_callback)
 
     # instantiate a policy object
@@ -194,19 +221,20 @@ def main():
     
     # optionally triggers the epsilon scheduler to be triggered!
     if epsilon_scheduling.lower() != "const":
-        policy.set_epsilon_scheduler(kind=epsilon_scheduling)
+        policy.set_epsilon_scheduler(kind=epsilon_scheduling, start_epsilon=max_eps, end_epsilon=min_eps)
     
     if use_wandb_callback:
         policy.model.tensorboard_log = f"runs/{run.id}"
         # also adding wandb callback to the picture here
         callback_list.append(
             WandbCallback(
-                gradient_save_freq=100,
+                gradient_save_freq=100 if args.debug else 0,  # to evaluate how training proceeds when debugging
                 model_save_path=f"models/{run.id}"
                 )
             )
         
-    print(f"Starting to train: {algorithm.upper()} on {env_name} for {to_scientific_notation(train_timesteps)} timesteps.")
+    msg = f"Starting to train: {algorithm.upper()} on {env_name} for {to_scientific_notation(train_timesteps)} timesteps"
+    print(msg)
     
     # creating one callback list only
     training_callbacks = CallbackList(callback_list)
@@ -220,12 +248,17 @@ def main():
     )
     # print the number of times a better env is found
     if verbose > 0: 
-        print("BestsFound: ", evaluation_callback.callback.bests_found, f"(out of {int(train_timesteps//evaluate_every)} evaluations)")
-        print(f"Training completed! Training output available at: {best_model_path}.zip")
-        print(f"Avg Return over test episodes: {round(avg_return, 2)} ± {round(std_return, 2)}")
+        msg = f"""
+            During training, the best model has been updated: {evaluation_callback.callback.bests_found} \
+            times (out of {int(train_timesteps//evaluate_every)} evaluations)
+        """
+        print(msg)
+        
+        print(f"\tTraining completed! Training output available at: {best_model_path}.zip")
+        print(f"\tAvg Return over latest test episodes: {round(avg_return, 2)} ± {round(std_return, 2)}")
 
-    # exit from wandb run
-    wandb.finish()
+    # end wandb
+    run.finish(quiet=True)
 
 if __name__=="__main__":
     main()

@@ -6,6 +6,8 @@ from .utils import NASIndividual
 from typing import Iterable, Text, Tuple, Dict, Optional
 from numpy.typing import NDArray
 from itertools import chain
+from operator import itemgetter
+
 
 class OscarEnv(NASEnv):
     """
@@ -17,15 +19,25 @@ class OscarEnv(NASEnv):
                  scores:Iterable[Text]=["naswot_score", "logsynflow_score", "skip_score"],
                  n_mods:int=1,
                  max_timesteps:int=50,
-                 latency_cutoff:float=5.,
+                 cutoff_percentile:float=85.,
                  target_device:Text="edgegpu",
-                 weights:Iterable[float]=[0.6, 0.4]):
+                 weights:Iterable[float]=[0.6, 0.4],
+                 latency_cutoff:Optional[float]=None):
         
         self.searchspace = searchspace_api
         self.score_names = scores
         self.n_mods = n_mods
         self.max_timesteps = max_timesteps
-        self.max_latency = latency_cutoff
+        # latency cutoff can be hardcoded from outside for specific experiments
+        if latency_cutoff is not None:
+            self.max_latency = latency_cutoff
+        else:
+            self.max_latency = \
+                searchspace_api.LatencyReadings.percentile_to_value(
+                    device=target_device,
+                    percentile=cutoff_percentile
+                )
+        
         self.target_device = target_device
         self.weights = np.array(weights) if not isinstance(weights, np.ndarray) else weights
 
@@ -66,6 +78,9 @@ class OscarEnv(NASEnv):
     @property
     def name(self): 
         return "oscar"
+    
+    def get_max_timesteps(self)->int:
+        return self.max_timesteps
 
     def normalize_score(self, score_value:float, score_name:Text, type:Text="std")->float:
         """
@@ -124,6 +139,11 @@ class OscarEnv(NASEnv):
             network_score = (np.ones_like(scores) / len(scores)) @ scores
             network_hardware_performance =  (np.ones_like(hardware_performance) / len(hardware_performance)) @ hardware_performance
             
+            # saving the scores within each individual
+            individual._scores = \
+                {s_name: s for s_name, s in zip(self.score_names, scores)} | \
+                {p_name: p for p_name, p in zip(["standardized-latency"], hardware_performance)}
+
             # in the hardware aware contest performance is in a direct tradeoff with hardware performance
             individual._fitness = np.array([network_score, -network_hardware_performance]) @ self.weights
         
@@ -207,14 +227,26 @@ class OscarEnv(NASEnv):
     
     def _get_info(self)->dict: 
         """Return the info dictionary."""
+        current_net_latency = self.searchspace.list_to_score(
+                    input_list=self.current_net.architecture, 
+                    score=f"{self.target_device}_latency"
+        )
         info_dict = {
             "current_network": self.current_net.architecture,
-            "training_free_score": self.current_net.fitness,
+            "training_free_score": sum(itemgetter(*self.score_names)(self.current_net._scores)),
             "timestep": self.timestep_counter,
-            "latency": self.searchspace.list_to_score(input_list=self.current_net.architecture, 
-                                                      score=f"{self.target_device}_latency"),
+            "current_net_latency": current_net_latency,
+            "current_net_latency_percentile": self.searchspace.LatencyReadings.value_to_percentile(
+                device=self.target_device,
+                value=current_net_latency),
+            "latency_cutoff": self.max_latency,
+            "is_terminated": self.is_terminated(),
+            "is_truncated": self.is_truncated(),
+            # test_accuracy is obtained from a lookup table and never accessed during training
+            "test_accuracy": self.searchspace.list_to_accuracy(input_list=self.current_net.architecture),
         }
-
+        info_dict |= self.current_net._scores
+        
         return info_dict
 
     def is_done(self)->bool: 

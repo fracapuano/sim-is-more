@@ -12,6 +12,18 @@ from numpy.typing import NDArray
 from itertools import chain
 import numpy as np
 from tqdm import tqdm
+from scipy.stats import percentileofscore
+
+
+class LatencyReadings:
+    """Latency readings for each device. This class is only used to store the latency readings."""
+    def percentile_to_value(self, device:str, percentile:int=50)->float:
+        """Returns the latency percentile-value for a given device."""
+        return np.percentile(getattr(self, f"{device}_readings"), percentile)
+
+    def value_to_percentile(self, device:str, value:float)->float:
+        """Returns the latency percentile for a given device."""
+        return percentileofscore(getattr(self, f"{device}_readings"), value)
 
 
 class NATS_Interface(Base_Interface):
@@ -19,10 +31,6 @@ class NATS_Interface(Base_Interface):
     NATS-specific search space interface.
     Also implements hardware-awareness through the use of a lookup table.
     """
-    path_to_synthetic_devices = str(get_project_root()) + "/searchspaces/nats_interface_syntheticdevices_lookuptable.json"
-    # reading the synthetic-devices lookup table
-    with open(path_to_synthetic_devices, "r") as lookup_file:
-        synthetic_lookup_table = {int(k): v for k, v in json.load(lookup_file).items()}
 
     def __init__(self, 
                  datapath:str=str(get_project_root()) + "/searchspaces/nats_blocks.json",
@@ -30,8 +38,7 @@ class NATS_Interface(Base_Interface):
                  use_lookup_table:bool=True,
                  path_to_lookup:Optional[str]=str(get_project_root()) + "/searchspaces/nats_interface_lookuptable.json", 
                  path_to_lookup_index:Optional[str]=str(get_project_root()) + "/searchspaces/nats_arch_index.json",
-                 target_device:Optional[Text]=None,
-                 use_synthetic_devices:bool=False):
+                 target_device:Optional[Text]=None):
         
         # parent init, loading the datapath
         super().__init__(datapath)
@@ -46,15 +53,23 @@ class NATS_Interface(Base_Interface):
             )
         elif path_to_lookup is not None:
             # either loading the lookup table or the synthetic devices lookup table
-            if not use_synthetic_devices:
-                with open(path_to_lookup, "r") as lookup_file:
+            with open(path_to_lookup, "r") as lookup_file:
                     self.lookup_table = {int(k): v for k, v in json.load(lookup_file).items()}
-            else:
-                # using a synthetic lookup table stored in memory once only
-                self.lookup_table = self.synthetic_lookup_table
 
             with open(path_to_lookup_index, "r") as lookup_index_file:
                 self.architecture_to_index = json.load(lookup_index_file)
+
+            # storing the latency readings in a dedicated class
+            self.LatencyReadings = LatencyReadings()
+
+            for device in self._data["devices"]:
+                setattr(self.LatencyReadings, 
+                        f"{device}_readings", 
+                        [
+                            self.lookup_table[i][dataset][f"{device}_latency"] 
+                            for i in range(len(self.lookup_table))
+                        ]
+                )
 
         # routing the number of classes based on datasets
         if dataset == "cifar10": 

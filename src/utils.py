@@ -52,66 +52,6 @@ def load_images(dataset:str='cifar10', batch_size:int=32, with_labels:bool=False
         return images[0].float()  # only returns data, with no labels. Imagenet tensors are in uint8 hence mapping to floats
 
 
-def architecture_to_genotype(arch_str:str)->List: 
-    """Turn architectures string into genotype list
-    
-    Args: 
-        arch_str(str): String characterising the cell structure only. 
-    
-    Returns: 
-        List: List containing the operations in the input cell structure.
-              In a genetic-algorithm setting, this description represents a genotype. 
-    """
-    all_ops = {'none', 'nor_conv_3x3', 'avg_pool_3x3', 'skip_connect', 'nor_conv_1x1'}
-    all_numbers = {'0', '1', '2'}
-
-    subcells = arch_str.split("+")  # divide the input string into different levels
-    ops = chain(*[subcell.split("|")[1:-1] for subcell in subcells])  # divide into different nodes to retrieve ops
-    return list(ops)
-
-
-def genotype_to_architecture(genotype:List)->str: 
-    """Reformats genotype as architecture string"""
-    return "|{}|+|{}|{}|+|{}|{}|{}|".format(*genotype)
-
-
-def cellstructure_isvalid(input_str:str)->bool: 
-    """Checks if the format of a given cell structure is valid for the NATS Bench topology space"""
-    
-    all_ops = {'none', 'nor_conv_3x3', 'avg_pool_3x3', 'skip_connect', 'nor_conv_1x1'}
-    all_numbers = {'0', '1', '2'}
-
-    subcells = input_str.split("+")  # divide the input string into different levels
-    ops = chain(*[subcell.split("|")[1:-1] for subcell in subcells])  # divide into different nodes to retrieve ops
-    subops = chain(*[op.split("~") for op in ops]) # divide into operation and node
-
-    is_valid = all([(n in all_ops) or (n in all_numbers) for n in subops]) # check if the full string is valid
-    return is_valid
-
-
-def genotype_to_accuracy(interface:object, genotype:list)->float: 
-    """Returns the fitness of a given architecture, identified through its genotype."""
-    # genotype -> arch string -> arch index -> accuracy score (check interface object for more details)
-    return interface.query_test_performance(
-        interface.query_index_by_architecture(
-            genotype_to_architecture(genotype=genotype)
-            )
-        )["accuracy"]
-
-
-def genotype_is_valid(genotype:List)->bool:
-    """
-    Checks whether or not genotype is valid for the NATS Bench topology space
-    TODO: Move inside the searchspace interface.
-    """
-    all_ops = {'none', 'nor_conv_3x3', 'avg_pool_3x3', 'skip_connect', 'nor_conv_1x1'}
-    all_numbers = {'0', '1', '2'}
-
-    subops = chain(*[op.split("~") for op in genotype]) # divide into operation and node
-    is_valid = all([(n in all_ops) or (n in all_numbers) for n in subops]) # check if the full string is valid
-    return is_valid
-
-
 def correlation(tensor:torch.tensor)->float:
     """Compute correlation coefficient on a tensor, based on
     https://math.stackexchange.com/a/1393907
@@ -163,13 +103,13 @@ def seed_all(seed:int):
     random.seed(seed)
 
 
-def to_scientific_notation(number:float)->str:
+def to_scientific_notation(number: float) -> str:
     """
     Converts number to scientific notation with one digit.
     For instance, 5000 becomes '5e3' and 123.45 becomes '1.2e2'
     """
     exponent = math.floor(math.log10(abs(number)))
-    mantissa = int(number / (10 ** exponent))
+    mantissa = round(number / (10 ** exponent), 1)
 
     # Format as string
     return f"{mantissa}e{exponent}"
