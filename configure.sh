@@ -13,7 +13,18 @@ else
   echo "Download complete."
 fi
 
-# installing poetry
-pip install poetry
-# letting poetry install dependancies
-poetry install
+# Check if the "thesisenv" environment exists
+if conda env list | grep -q "oscarenv"; then
+    echo "The 'oscarenv' environment already exists."
+else
+    # Create the Conda environment
+    conda create -n oscarenv python=3.11 -y
+    
+    # Activate the environment
+    conda activate oscarenv
+    
+    # Install packages from requirements.txt
+    pip install -r requirements.txt
+    
+    echo "The 'oscarenv' environment has been created and the relevant dependancies have been installed."
+fi
