@@ -60,10 +60,10 @@ class NATS_Interface(Base_Interface):
                 self.architecture_to_index = json.load(lookup_index_file)
 
             # storing the latency readings in a dedicated class
-            self.LatencyReadings = LatencyReadings()
+            self.latency_readings = LatencyReadings()
 
             for device in self._data["devices"]:
-                setattr(self.LatencyReadings, 
+                setattr(self.latency_readings, 
                         f"{device}_readings", 
                         [
                             self.lookup_table[i][dataset][f"{device}_latency"] 
