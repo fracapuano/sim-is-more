@@ -341,4 +341,10 @@ class OscarEnv(NASEnv):
         # retrieve info
         info = self._get_info()
 
+        if terminated:
+            reward = -1
+
+        # storing the reward in a variable to be accessed by the render method
+        self.step_reward = reward
+
         return self._observation, reward, terminated, truncated, info
