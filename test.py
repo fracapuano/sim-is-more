@@ -29,8 +29,9 @@ def parse_args()->object:
     parser.add_argument("--verbose", default=0, type=int, help="Verbosity value")
     parser.add_argument("--test-episodes", default=5, type=int, help="Number of test episodes for the RL agent")
     parser.add_argument("--seed", default=777, type=int, help="Random seed setted")
-    parser.add_argument("--fittest-ever", action="store_true", help="When provided, policy is prompted to return fittest individual EVER.")
-    parser.add_argument("--save-results", action="store_true", help="Number of episodes to use.")
+    parser.add_argument("--best-ever", action="store_true", help="When provided, policy is prompted to return fittest individual EVER.")
+    parser.add_argument("--render", action="store_true", help="When provided, triggers rendering.")
+    parser.add_argument("--save-trajectories", action="store_true", help="When provided, saves all tested trajectories (initial_net, final_net).")
 
     #parser.add_argument("--default", action="store_true", help="Default mode, ignore all configurations")
     parser.add_argument("--debug", action="store_true", help="Default mode, ignore all configurations")
@@ -47,16 +48,17 @@ def main():
     verbose=args.verbose
     test_episodes=args.test_episodes
     seed=args.seed
-    fittest_ever=args.fittest_ever
+    best_ever=args.best_ever
+    save_trajectories=args.save_trajectories
     
     if args.debug: 
-        model_path="models/PPO_renas_100e5"
+        model_path="models/oscar/edgegpu/lr=3.0e-4/gamma=0.6/seed=777/PPO_oscar_1.0e5/PPO_oscar_1.0e5.zip"
         dataset="ImageNet16-120"
-        target_device=None
+        target_device="edgegpu"
         test_episodes=1
         seed=0
         verbose=1
-        fittest_ever=False
+        best_ever=False
 
     # set seed for reproducibility
     seed_all(seed=seed)
@@ -69,12 +71,10 @@ def main():
 
     # create env (gym.Env)
     env = envs_dict[environment.lower()](searchspace_api=searchspace_interface)
-    # wrap env into a vectorized environment
-    env = build_vec_env(
-        env_=env,
-        n_envs=1 # only one environment is needed for testing
-    )
     
+    # setting a target device for hardware aware search at test time
+    env.target_device = target_device
+
     # instantiate a testing suite
     policy = Policy(
         algo=algorithm,
@@ -89,13 +89,13 @@ def main():
     # saving up the episode return and time duration
     returns, durations = np.zeros(test_episodes), np.zeros(test_episodes)
     
-    initial_nets, terminal_nets = [], []
+    initial_nets, episode_bests = [], []
 
     for ep in range(test_episodes):
         done = False
-        obs = env.reset() # Reset environment to initial state
+        obs, info = env.reset() # Reset environment to initial state
         # save initial network
-        initial_net = env.get_attr("current_net")[0].architecture
+        initial_net = env.current_net.architecture
         initial_nets.append(initial_net)
 
         episode_return = 0
@@ -103,39 +103,31 @@ def main():
 
         while not done:  # Until the episode is over
             action = policy.predict(observation=obs, deterministic=True)  # deterministic is True while evaluating            
-            obs, reward, done, _ = env.step(action)	# Step the simulator to the next timestep
+            obs, reward, terminated, truncated, info = env.step(action)	# Step the simulator to the next timestep
+
+            done = terminated or truncated
 
             episode_return += reward
-        
-        terminal_net = env.get_attr("current_net")[0].architecture
-        terminal_nets.append(terminal_net)
-        
-        durations[ep] = time.time()-start
+            if args.render:
+                env.render(mode="human")
+                
+        durations[ep] = time.time() - start
         returns[ep] = episode_return
     
-    # returning also the fittest individual in the environment buffer
-    if fittest_ever:
-        best_individual = max(list(env.history.keys()), key=lambda k: env.history[k].fitness)
-        print(f"Fittest individual (ever): {best_individual}")
-    else: 
-        best_individual = env.get_attr("current_net")[0].architecture
-        print(f"Fittest individual in terminal population: {best_individual}")
+        best_individual = env.current_net.architecture
+        episode_bests.append(best_individual)
+        print(f"Network Designed: {best_individual}")
     
     print("Average episode return {:.4g}".format(returns.mean()))
-    if fittest_ever:
-        print("Final individual test accuracy: {:.5g}".format(searchspace_interface.\
-                                                              architecture_to_accuracy(best_individual)))
-    else:
-        print("Final individual test accuracy: {:.5g}".format(searchspace_interface.\
-                                                              list_to_accuracy(best_individual)))
+    if best_ever:
+        best_ever_net = max(episode_bests, key=lambda x: searchspace_interface.list_to_accuracy(x))
+        print(f"Out of {test_episodes} test episodes, the best network designed is {best_ever_net}")
+        print("With a validation accuracy of {:.5g}".format(searchspace_interface.architecture_to_accuracy(best_individual)))
 
-    print("Final latency: {:.5g}".format(
-        searchspace_interface.list_to_score(best_individual, f"{target_device}_latency")))
-
-    if args.save_results:
+    if save_trajectories:
         # saving all final networks obtained
-        with open("TestResults.pkl", "wb") as results:
-            pickle.dump(list(zip(initial_nets, terminal_nets)), results)
+        with open("test_results.pkl", "wb") as results:
+            pickle.dump(list(zip(initial_nets, episode_bests)), results)
 
 if __name__=="__main__":
     main()
