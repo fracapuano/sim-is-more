@@ -40,22 +40,21 @@ def main():
     for ep in range(args.n_episodes): 
         done = False
         obs, info = env.reset() # Reset environment to initial state
-        
+
         start = time.time()
         while not done:  # Until the episode is over
             action = env.action_space.sample()	# Sample random action            
             observation, reward, terminated, truncated, info = env.step(action)	# Step the simulator to the next timestep
+            if args.render:
+                env.render()
             
             report_data.append(info | {"action_performed": action, "reward": reward, "episode_id": ep})
-
+            
             done = terminated or truncated
             if args.verbose and done:
                 print("*** Episode finished ***")
                 print("Episode finished due to {}.".format("truncation" if truncated else "termination")) 
                 pprint(info)
-            
-            if args.render:
-                env.render()
 
         end = time.time()
         print(f"Episode {ep} duration: "+"{:.4f}".format(end - start))
