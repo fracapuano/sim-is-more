@@ -122,7 +122,7 @@ class NATS_Interface(Base_Interface):
         Returns:
             str: Architecture string associated with index.
         """
-        return "{}~0|+|{}~0|{}~1|+|{}~0|{}~1|{}~2|".format(*(self.index_to_list(architecture_index=index)))
+        return "|{}~0|+|{}~0|{}~1|+|{}~0|{}~1|{}~2|".format(*(self.index_to_list(architecture_index=index)))
     
     def index_to_lookup_index(self, index:int)->int:
         """Retrieves the lookup index associated with a given index.
@@ -280,6 +280,23 @@ class NATS_Interface(Base_Interface):
         ops = chain(*[subcell.split("|")[1:-1] for subcell in subcells])
         
         return list(ops)
+
+    def architecture_to_ops(self, architecture_string:Text)->List[Text]: 
+        """Extracts the operations from an architecture string.
+
+        Args: 
+            architecture_string(str): String characterising the cell structure only. 
+
+        Returns: 
+            List[str]: List containing the operations in the input cell structure.
+                       In a genetic-algorithm setting, this description represents a genotype. 
+        """
+        # divide the input string into different levels
+        subcells = architecture_string.split("+")
+        # divide into different nodes to retrieve ops
+        ops = chain(*[map(lambda op_pos: op_pos.split("~")[0], subcell.split("|")[1:-1]) for subcell in subcells])
+        
+        return list(ops)
     
     def encode_architecture(
             self, 
@@ -412,9 +429,9 @@ class NATS_Interface(Base_Interface):
         Returns:
             float: Score value for `input_list`.
         """
-        # splitting the input list to retrieve the operations only -- this is then fed into list_to_index
-        levels_split = [op.split("~")[0] for op in input_list]
-        return self.compute_score(score_name=score, index=self.list_to_index(architecture_list=levels_split))
+        lookup_index = self.architecture_to_index["/".join(input_list)]
+        
+        return self.compute_score(score_name=score, index=lookup_index)
 
     def architecture_to_score(self, architecture_string:Text, score:Text)->float:
         """Returns the value of `score` of an architecture string.
@@ -430,6 +447,8 @@ class NATS_Interface(Base_Interface):
         """
         # retrieving the architecture list out of the architecture string
         architecture_list = self.architecture_to_list(architecture_string=architecture_string)
+        # mapping the index retrieved to the corresponding index in the lookup table
+        lookup_index = self.architecture_to_index["/".join(architecture_list)]
 
-        return self.compute_score(score_name=score, index=self.list_to_index(architecture_list=architecture_list))
+        return self.compute_score(score_name=score, index=lookup_index)
 
