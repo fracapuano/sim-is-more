@@ -9,9 +9,9 @@ from itertools import chain
 from operator import itemgetter
 import pygame
 import matplotlib.pyplot as plt
-from PIL import Image
 from collections import deque
-from copy import copy
+import random
+from .render import figure_to_image
 
 class OscarEnv(NASEnv):
     metadata = {
@@ -31,13 +31,16 @@ class OscarEnv(NASEnv):
                  target_device:Text="edgegpu",
                  weights:Iterable[float]=[0.6, 0.4],
                  latency_cutoff:Optional[float]=None,
-                 observation_buffer_size:int=10):
+                 observation_buffer_size:int=10,
+                 n_samples:Optional[int]=None):
         
         self.searchspace = searchspace_api
         self.score_names = scores
         self.n_mods = n_mods
         self.max_timesteps = max_timesteps
         self.observations_buffer_size = observation_buffer_size
+        # initializing a pool of networks to be used for plotting purposes
+        self.init_networks_pool(n_samples=n_samples)
 
         # latency cutoff can be hardcoded from outside for specific experiments
         if latency_cutoff is not None:
@@ -87,8 +90,23 @@ class OscarEnv(NASEnv):
         self.action_space = spaces.MultiDiscrete(action_space)
 
     @property
-    def name(self): 
+    def name(self):
         return "oscar"
+    
+    def init_networks_pool(self, n_samples: Optional[int] = None):
+        """
+        Initializes the networks pool by randomly selecting choices from the searchspace.
+
+        Args:
+            n_samples (int, optional): Number of samples to be drawn from the searchspace. 
+                If not provided, defaults to the length of the searchspace.
+
+        Returns:
+            None
+        """
+        self.n_samples = n_samples if n_samples is not None else len(self.searchspace)
+        # initializes the network pool with n_samples random choices from the searchspace
+        self.network_pool = list(random.choices(self.searchspace, k=self.n_samples))
     
     def get_max_timesteps(self)->int:
         return self.max_timesteps
@@ -242,9 +260,13 @@ class OscarEnv(NASEnv):
                     input_list=self.current_net.architecture, 
                     score=f"{self.target_device}_latency"
         )
+        training_free_coefficients = np.ones(len(self.score_names)) / len(self.score_names)
+        training_free_score = \
+            np.array(itemgetter(*self.score_names)(self.current_net._scores)) @ training_free_coefficients
+        
         info_dict = {
             "current_network": self.current_net.architecture,
-            "training_free_score": sum(itemgetter(*self.score_names)(self.current_net._scores)),
+            "training_free_score": training_free_score,
             "timestep": self.timestep_counter,
             "current_net_latency": current_net_latency,
             "current_net_latency_percentile": self.searchspace.latency_readings.value_to_percentile(
@@ -260,17 +282,6 @@ class OscarEnv(NASEnv):
         
         return info_dict
 
-    def is_done(self)->bool: 
-        """
-        Returns `True` at episode termination and `False` before.
-        DEPRECATED: use `is_terminated` instead.
-        """
-        Warning("is_done is deprecated, use is_terminated instead")
-        self.timesteps_over = self.timestep_counter >= self.max_timesteps
-        self.latency_over = self._observation["latency_value"].item() >= self.max_latency
-
-        return self.timesteps_over or self.latency_over
-
     def is_terminated(self)->bool:
         """
         Returns `True` if the episode is terminated and `False` otherwise.
@@ -280,8 +291,6 @@ class OscarEnv(NASEnv):
 
     def reset(self, seed:Optional[int]=None)->NDArray:
         """Resets custom env attributes."""
-        super().reset(seed=seed)
-
         self._observation = self.observation_space.sample()
         self.update_current_net()
         self.timestep_counter= 0
@@ -360,7 +369,7 @@ class OscarEnv(NASEnv):
         self.step_reward = reward
 
         return self._observation, reward, terminated, truncated, info
-
+    
     def _set_combined_scores(self):
         """
         Calculates the combined scores for all architectures in the search space.
@@ -377,25 +386,21 @@ class OscarEnv(NASEnv):
         # Obtaining a matrix with the normalized training free scores for all the architectures in the searchspace
         self.training_free_scores = np.hstack([
                 np.array([
-                    # obtaining the score value from the lookup table
-                    self.searchspace.list_to_score(
-                        self.searchspace.architecture_to_list(
-                            self.searchspace.lookup_table[i]["architecture_string"]
-                            ), 
-                        score=score_name)
+                    # obtaining the score value from the searchspace object
+                    self.searchspace.architecture_to_score(architecture_string=a, score=score_name)
                     for score_name in self.score_names]).reshape(-1,1)
-                for i in range(len(self.searchspace))]
+                for a in self.network_pool]
+        )
+        # computing the mean and std of the scores for the network pool considered   
+        self.scores_mean, self.scores_std = np.vstack(
+            [self.training_free_scores.mean(axis=1), self.training_free_scores.std(axis=1)]
         )
         
-        # extracting the mean and std of the scores
-        scores_mean, scores_std = \
-            np.vstack([np.array(self.searchspace.get_score_mean_and_std(s)) for s in self.score_names]).T
-        
         # normalizing the scores using mean and std
-        self.training_free_scores = (self.training_free_scores - scores_mean.reshape(-1,1)) / scores_std.reshape(-1,1)
+        self.normalized_training_free_scores = (self.training_free_scores - self.scores_mean.reshape(-1,1)) / self.scores_std.reshape(-1,1)
 
         # combining the scores using the combination coefficients
-        self.combined_scores = scores_combination_coeffs @ self.training_free_scores
+        self.combined_scores = scores_combination_coeffs @ self.normalized_training_free_scores
 
     def _set_hardware_costs(self):
         """
@@ -404,9 +409,16 @@ class OscarEnv(NASEnv):
         This method retrieves the latency readings for the target device from the searchspace
         and assigns them to the hardware_costs attribute of the current instance.
         """
-        self.hardware_costs = np.array(
-            getattr(self.searchspace.latency_readings, f"{self.target_device}_readings")
+        self.hardware_costs = np.fromiter(
+            map(lambda a: self.searchspace.architecture_to_score(a, score=f"{self.target_device}_latency"), self.network_pool), 
+            dtype="float"
         )
+
+        # extracting the mean and std of the scores
+        self.hw_score_mean, self.hw_score_std = self.hardware_costs.mean(), self.hardware_costs.std()
+        
+        # normalizing the scores using mean and std
+        self.normalized_hardware_costs = (self.hardware_costs - self.hw_score_mean) / self.hw_score_std
         
     def _draw_background(self)->Tuple[plt.Figure, plt.Axes]:
         
@@ -420,8 +432,8 @@ class OscarEnv(NASEnv):
             zorder=0
         )
 
-        ax.set_ylabel("Combined Training-Free Score")
         ax.set_xlabel("Latency")
+        ax.set_ylabel("Combined Training-Free Score")
         # retrieving the current axes limits for vlines method
         ymin, ymax = ax.get_ylim()
         # displaying the latency cutoff
@@ -438,16 +450,13 @@ class OscarEnv(NASEnv):
 
     def _draw_architectures(self, fig:plt.Figure, ax:plt.Axes)->Tuple[plt.Figure, plt.Axes]:
         
-        # unpacking the observations buffer -> turning it into a list to avoid being consumed by the map function
-        architectures = list(map(lambda x: x["current_network"], self.observations_buffer))
-
+        # unpacking the buffer into relevant coordinates
         x_coordinates = np.fromiter(
-            map(lambda x: self.hardware_costs[self.searchspace.architecture_to_index["/".join(x)]], architectures),
+            map(lambda x: x["current_net_latency"], self.observations_buffer),
             dtype="float"
         )
-        # unpacking the buffer into relevant coordinates
         y_coordinates = np.fromiter(
-            map(lambda x: self.combined_scores[self.searchspace.architecture_to_index["/".join(x)]], architectures),
+            map(lambda x: x["training_free_score"], self.observations_buffer),
             dtype="float"
         )
         
@@ -457,6 +466,7 @@ class OscarEnv(NASEnv):
         line.set_data(x_coordinates, y_coordinates)
         scatt.set_offsets(np.c_[x_coordinates, y_coordinates])
         ax.legend(loc = "upper right", framealpha=1., fontsize=12)
+        ax.set_title(f"Timestep {self.timestep_counter}/{self.max_timesteps}")
 
         return fig, ax
 
@@ -489,8 +499,8 @@ class OscarEnv(NASEnv):
         ax.set_ylabel("Reward")
 
         return fig, ax
-        
-    def _render_frame(self):
+
+    def _render_frame(self, mode:Text="human")->Optional[NDArray]:
         # The first 640 pixels are for the scatter plot - The second 640 are for test accuracy and latency - The last 640 are for rewards
         splits = (640, 640, 640)
         screen_size = (sum(splits), 480)
@@ -509,28 +519,7 @@ class OscarEnv(NASEnv):
 
         if not hasattr(self, "clock"):
             self.clock = pygame.time.Clock()
-
-        # The first 640 pixels are for the scatter plot
-        # The second 320 are for test accuracy and latency
-        # The last 320 are for rewards
-        splits = (640, 640, 640)
-        screen_size = (sum(splits), 480)
-
-        # populating the combined scores and hardware costs attributes if not already done
-        if not hasattr(self, "combined_scores"):
-            self._set_combined_scores()
-        if not hasattr(self, "hardware_costs"):
-            self._set_hardware_costs()
-
-        # Initialize Pygame window and clock if not already done
-        if getattr(self, "window", None) is None:
-            pygame.init()
-            pygame.display.init()
-            self.window = pygame.display.set_mode(screen_size)
-
-        if getattr(self, "clock", None) is None:
-            self.clock = pygame.time.Clock()
-
+        
         # Handle Pygame events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -540,56 +529,36 @@ class OscarEnv(NASEnv):
         fig, ax = self._draw_architectures(
             *self._draw_background()
         )
-
-        fig.canvas.draw()
-        X = np.array(fig.canvas.renderer.buffer_rgba())
-        architectures_rgb_array = np.array(Image.fromarray(X).convert('RGB'))
-        plt.close(fig)
-        
-        # Transpose the frame array to get the correct orientation
-        architectures_rgb_array = np.transpose(architectures_rgb_array, axes=(1, 0, 2))
-        # Make a surface from the frame array
-        architectures_frame = pygame.surfarray.make_surface(architectures_rgb_array)
-        # rescaling the surfaces to fit screen size
-        architectures_frame = pygame.transform.scale(architectures_frame, (splits[0], screen_size[1]))
-
+        architectures_frame = figure_to_image(fig, splits[0], screen_size[1])
         self.window.blit(architectures_frame, (0, 0))
         del fig, ax
 
         # 2) Draw the test-accuracy and latency bars
         fig, ax = self._draw_accuracy_latency_bars()
-        fig.canvas.draw()
-        X = np.array(fig.canvas.renderer.buffer_rgba())
-        accuracy_latency_rgb_array = np.array(Image.fromarray(X).convert('RGB'))
-        plt.close(fig)
-        accuracy_latency_rgb_array = np.transpose(accuracy_latency_rgb_array, axes=(1, 0, 2))
-        accuracy_latency_frame = pygame.surfarray.make_surface(accuracy_latency_rgb_array)
-        accuracy_latency_frame = pygame.transform.scale(accuracy_latency_frame, (splits[1], screen_size[1]))
+        accuracy_latency_frame = figure_to_image(fig, splits[1], screen_size[1])
         self.window.blit(accuracy_latency_frame, (sum(splits[:1]), 0))
         del fig, ax
 
         # 3) Draw the reward bar
         fig, ax = self._draw_reward_bar()
-        fig.canvas.draw()
-        X = np.array(fig.canvas.renderer.buffer_rgba())
-        reward_rgb_array = np.array(Image.fromarray(X).convert('RGB'))
-        plt.close(fig)
-        reward_rgb_array = np.transpose(reward_rgb_array, axes=(1, 0, 2))
-        reward_frame = pygame.surfarray.make_surface(reward_rgb_array)
-        reward_frame = pygame.transform.scale(reward_frame, (splits[2], screen_size[1]))
+        reward_frame = figure_to_image(fig, splits[2], screen_size[1])
         self.window.blit(reward_frame, (sum(splits[:2]), 0))
 
         pygame.event.pump()
         # Limit the frame rate
         self.clock.tick(self.metadata["render_fps"])
-        # Update the display
-        pygame.display.flip()
+
+        if mode=="rgb_array":
+            return pygame.surfarray.array3d(self.window)
+        elif mode=="human":
+            # Update the display
+            pygame.display.flip()
+            return None
 
     def render(self, mode="human"):
         """Calls the render frame method."""
-        
         # Storing information associated with current observation in the buffer
         self.observations_buffer.append(self._get_info())
-
-        return self._render_frame()
+        
+        return self._render_frame(mode=mode)
     
