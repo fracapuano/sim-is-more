@@ -197,6 +197,7 @@ class MarcellaPlusEnv(OscarEnv):
         # self._observation["blocks_latency"] = self.blocks_latency
 
         # random choices
+        # TODO: Revisit this based on the init network pools defined in oscar
         choices = random.choices(self.searchspace, k=self.n_samples)
 
         # apply preprocessing operations to the random networks sampled
