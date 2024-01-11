@@ -30,10 +30,10 @@ class ChangeDevice_Callback(BaseCallback):
         """
         # accessing the list of possible devices per env considered - all envs have the same devices, hence [0]
         self.available_devices = list(
-            self.training_env.get_attr("devices_and_latencies")[0].keys()
+            self.training_env.env_method("get_devices")[0].keys()
         )
         # storing the current hardware used for training
-        current_device = self.model.env.get_attr("target_device") if isinstance(self.model.env, VecEnv) \
+        current_device = self.model.env.env_method("get_target_device") if isinstance(self.model.env, VecEnv) \
                            else self.model.env.target_device
         # stores the target hardware the model has been currently training on
         self.devices_history.append(current_device)

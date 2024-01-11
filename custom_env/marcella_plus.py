@@ -30,23 +30,11 @@ class MarcellaPlusEnv(OscarEnv):
     def __init__(self, 
                  searchspace_api:Base_Interface,
                  blocks_distribution:Optional[Dict[Text, ProbabilityDistribution]]=None,
-                 scores:Iterable[Text]=["naswot_score", "logsynflow_score", "skip_score"],
-                 n_mods:int=1,
-                 max_timesteps:int=50,
-                 weights:Iterable[float]=[0.6, 0.4],
-                 n_samples:Optional[int]=None,
+                 cutoff_percentile:float=85,
                  custom_devices:Optional[Iterable[Text]]=None,
-                 cutoff_percentile:float=85.):
-                
-        super().__init__(
-            searchspace_api=searchspace_api,
-            scores=scores,
-            n_mods=n_mods,
-            max_timesteps=max_timesteps,
-            latency_cutoff=float("inf"),  # hack to overwrite the latency cutoff at each (first) reset
-            target_device=None,  # removing target device, devices are simulated here
-            weights=weights,
-        )
+                 **kwargs):
+        
+        self.searchspace = searchspace_api
         """
         This variable stores the distribution of latencies for each block.
         At each call of the `reset()` method, blocks' latencies are sampled from said distributions
@@ -67,19 +55,16 @@ class MarcellaPlusEnv(OscarEnv):
             }
         else:
             self.blocks_distribution = blocks_distribution
-        """
-        This variable stores the number of networks to be sampled at each call of the `reset()` method.
-        If None, the number of networks to be sampled is equal to the number of networks in the searchspace.
-        Networks are sampled to compute the mean and std of the hardware cost associated to the device simulated with
-        this reset method.
-        """
-        self.n_samples = len(self.searchspace) if n_samples is None else n_samples
+        
+        # sample a new set of blocks' latencies
+        self._sample_blocks_latencies()
 
-        """
-        This variable stores the percentile of the hardware cost distribution to be used as latency cutoff.
-        If an agent produces a network with hardware cost higher than the latency cutoff, the episode is terminated.
-        """
-        self.cutoff_percentile = cutoff_percentile
+        super().__init__(
+            searchspace_api=searchspace_api,
+            cutoff_percentile=cutoff_percentile,
+            target_device=None,  # removing target device, devices are simulated here
+            **kwargs
+        )
 
     @property
     def name(self): 
@@ -121,6 +106,21 @@ class MarcellaPlusEnv(OscarEnv):
         
         return sum(itemgetter(*get_architecture_ops(architecture_list))(self.blocks_latency))
 
+    def _set_hardware_costs(self):
+        """
+        Sets the hardware costs based on the latency of the networks within the network pool on the target device.
+        """
+        self.hardware_costs = np.fromiter(
+            map(lambda a: self.compute_hardware_cost(self.searchspace.architecture_to_list(a)), self.network_pool), 
+            dtype="float"
+        )
+
+        # extracting the mean and std of the scores
+        self.hw_score_mean, self.hw_score_std = self.hardware_costs.mean(), self.hardware_costs.std()
+        
+        # normalizing the scores using mean and std
+        self.normalized_hardware_costs = (self.hardware_costs - self.hw_score_mean) / self.hw_score_std
+
     def fitness_function(self, individual:NASIndividual)->NASIndividual: 
         """
         Directly overwrites the fitness attribute for a given individual.
@@ -154,73 +154,52 @@ class MarcellaPlusEnv(OscarEnv):
         # saving the different scores per each individual
         individual._scores = \
             {s_name: s for s_name, s in zip(self.score_names, scores)} | \
-            {p_name: p for p_name, p in zip(["standardized-latency"], hardware_performance)}
+            {p_name: p for p_name, p in zip(["normalized-latency"], hardware_performance)}
 
         # in the hardware aware contest performance is in a direct tradeoff with hardware performance
         individual._fitness = np.array([network_score, -network_hardware_performance]) @ self.weights
         
         return individual
-
-    def _get_info(self)->dict:
+    
+    def _sample_blocks_latencies(self) -> None:
         """
-        Returns a dictionary containing information about the current state of the environment.
+        Samples a new set of latencies for each block.
+
+        This method generates a new set of latencies for each block in the search space.
+        The latencies are sampled from a distribution specific to each operation.
 
         Returns:
-            dict: Information dictionary.
+            None
         """
-        # storing the current network's hardware cost
-        current_net_hardware_cost = self.compute_hardware_cost(self.current_net.architecture)
-
-        info = {
-            "timestep": self.timestep_counter,
-            "current_net": self.current_net,
-            "latency_cutoff": self.latency_cutoff,
-            "current_net_latency": current_net_hardware_cost,
-            "current_net_latency_percentile": \
-                self.get_percentile_of_hw_cost(current_net_hardware_cost),
-            "blocks_latency": self.blocks_latency,
-            "current_net_scores": self.current_net._scores
+        # sampling a new set of latencies for each block
+        self.blocks_latency = {
+            op: self.blocks_distribution[op].sample().item() for op in self.searchspace.all_ops
         }
-                
-        return info
 
     def reset(self, seed:Optional[int]=None)->NDArray:
         """Resets custom env attributes."""
         # sampling a new starting observation
         self._observation = self.observation_space.sample()
         
-        # sampling a new set of latencies for each block
-        self.blocks_latency = {
-            op: self.blocks_distribution[op].sample().item() for op in self.searchspace.all_ops
-        }
+        # sampling a new distribution of blocks' latencies
+        self._sample_blocks_latencies()
+        # computing hardware cost samples
+        self._set_hardware_costs()
+        
         # FIXME: possibly storing the blocks' latencies in the observation
         # self._observation["blocks_latency"] = self.blocks_latency
-
-        # random choices
-        choices = random.choices(self.searchspace, k=self.n_samples)
-
-        # apply preprocessing operations to the random networks sampled
-        random_nets = map(lambda a: self.searchspace.get_architecture_ops(self.searchspace.architecture_to_list(a)), 
-                          choices)
-        
-        # computing hardware cost samples
-        self.hardware_measures = [
-            self.compute_hardware_cost(net) 
-            for net in random_nets
-        ]
+                
         # storing mean and std of hardware cost in the observation
-        self.mean_hardware_cost = np.mean(self.hardware_measures)
-        self.std_hardware_cost = np.std(self.hardware_measures)
-
-        # defining a function handle to compute the percentile of a given hardware cost
-        self.get_percentile_of_hw_cost = lambda x: percentileofscore(self.hardware_measures, x)
+        self.mean_hardware_cost = np.mean(self.hardware_costs)
+        self.std_hardware_cost = np.std(self.hardware_costs)
         
         # setting the latency cutoff to the cutoff percentile-th of the hardware measures
-        self.latency_cutoff = np.percentile(self.hardware_measures, self.cutoff_percentile)
-        
-        # resetting the latency cutoff
+        self.max_latency = np.percentile(self.hardware_costs, self.cutoff_percentile)
         self.update_current_net()
+
+        # flushing out timestep counter and the buffer of observations
         self.timestep_counter= 0
+        self.observations_buffer.clear()
 
         return self._get_obs(), self._get_info()
     
@@ -229,7 +208,7 @@ class MarcellaPlusEnv(OscarEnv):
         Checks whether or not the episode is terminated.
         MarcellaPlusEnv is terminated when the latency of the current network is higher than the latency cutoff.
         """
-        return bool(self.compute_hardware_cost(self.current_net.architecture) > self.latency_cutoff)
+        return bool(self.compute_hardware_cost(self.current_net.architecture) > self.max_latency)
 
     def step(self, action:NDArray)->Tuple[NDArray, float, bool, dict]: 
         """Steps the episode having a given action.
@@ -282,6 +261,12 @@ class MarcellaPlusEnv(OscarEnv):
         truncated = self.is_truncated()
         # retrieve info
         info = self._get_info()
+
+        if terminated:
+            reward = -1
+
+        # storing the reward in a variable to be accessed by the render method
+        self.step_reward = reward
 
         return self._observation, reward, terminated, truncated, info
 
