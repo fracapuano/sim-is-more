@@ -19,6 +19,8 @@ from numpy.typing import NDArray
 from .utils import NASIndividual
 from typing import Iterable, Text, Tuple, Dict, Optional
 from scipy.stats import percentileofscore
+
+
 class OscarEnv(NASEnv):
     metadata = {
         "render_modes": ["human", "rgb_array"],
@@ -32,7 +34,7 @@ class OscarEnv(NASEnv):
                  searchspace_api:Base_Interface,
                  scores:Iterable[Text]=["naswot_score", "logsynflow_score", "skip_score"],
                  n_mods:int=1,
-                 max_timesteps:int=50,
+                 max_timesteps:int=20,
                  cutoff_percentile:float=85.,
                  target_device:Text="edgegpu",
                  weights:Iterable[float]=[0.6, 0.4],
@@ -79,8 +81,7 @@ class OscarEnv(NASEnv):
             {
                 "architecture": spaces.MultiDiscrete([
                     len(self.searchspace.all_ops) for _ in range(self.searchspace.architecture_len)
-                    ]), 
-                # latency is always less than 100 ms on all devices considered here
+                    ]),
                 "latency_value": spaces.Box(low=0, high=float("inf"), shape=(1,))
             }
         )
@@ -120,7 +121,7 @@ class OscarEnv(NASEnv):
             percentile)
         )
 
-    def init_networks_pool(self, n_samples: Optional[int] = None):
+    def init_networks_pool(self, n_samples: Optional[int]=None):
         """
         Initializes the networks pool by randomly selecting choices from the searchspace.
 
@@ -189,7 +190,7 @@ class OscarEnv(NASEnv):
                 )
                 for metric in ["latency"]  # change here to add more hardware aware metrics
             ])
-            # individual fitness is a convex combination of multiple scores
+            # individual fitness is a linear combination of multiple scores
             network_score = (np.ones_like(scores) / len(scores)) @ scores
             network_hardware_performance =  (np.ones_like(hardware_performance) / len(hardware_performance)) @ hardware_performance
             
