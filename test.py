@@ -1,21 +1,35 @@
-from policy.policy import Policy
-import argparse
+import re
 import time
 import pickle
+import argparse
+import numpy as np
 from src import (
     seed_all, 
     NATS_Interface,
 )
-from custom_env import (
-    envs_dict,
-    build_vec_env
+from policy import (
+    Policy, 
+    TransitionsHistoryWrapper
 )
-import numpy as np
+from custom_env import envs_dict
+from typing import Text, Optional
+
 
 def boolean_string(s):
     if s.lower() not in {'false', 'true'}:
         raise ValueError('Not a valid boolean string')
     return s.lower() == 'true'
+
+def extract_historylen_from_path(model_path:Text)->Optional[int]:
+    """Extract the history_len from the model path."""
+    # Define the regex pattern to match 'historylen=<any_number>'
+    pattern = r"history_len=(\d+)"
+
+    # Search for the pattern in the input string
+    match = re.search(pattern, model_path)
+
+    # Extract and return the number if found, otherwise return None
+    return int(match.group(1)) if match else None
 
 def parse_args()->object: 
     """Args function. 
@@ -75,6 +89,9 @@ def main():
     # setting a target device for hardware aware search at test time
     env.target_device = target_device
 
+    if environment == "marcella-plus":
+        env = TransitionsHistoryWrapper(env=env, history_len=extract_historylen_from_path(model_path))
+
     # instantiate a testing suite
     policy = Policy(
         algo=algorithm,
@@ -109,7 +126,7 @@ def main():
 
             episode_return += reward
             if args.render:
-                env.render(mode="human")
+                env.render()
                 
         durations[ep] = time.time() - start
         returns[ep] = episode_return
