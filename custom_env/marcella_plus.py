@@ -111,7 +111,7 @@ class MarcellaPlusEnv(OscarEnv):
         Sets the hardware costs based on the latency of the networks within the network pool on the target device.
         """
         self.hardware_costs = np.fromiter(
-            map(lambda a: self.compute_hardware_cost(self.searchspace.architecture_to_list(a)), self.network_pool), 
+            map(lambda a: self.compute_hardware_cost(self.searchspace.architecture_to_list(a)), self.networks_pool), 
             dtype="float"
         )
 

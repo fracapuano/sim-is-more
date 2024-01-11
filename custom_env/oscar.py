@@ -133,7 +133,7 @@ class OscarEnv(NASEnv):
         """
         self.n_samples = n_samples if n_samples is not None else len(self.searchspace)
         # initializes the network pool with n_samples random choices from the searchspace
-        self.network_pool = list(random.choices(self.searchspace, k=self.n_samples))
+        self.networks_pool = list(random.choices(self.searchspace, k=self.n_samples))
     
     def get_max_timesteps(self)->int:
         return self.max_timesteps
@@ -410,7 +410,7 @@ class OscarEnv(NASEnv):
                     # obtaining the score value from the searchspace object
                     self.searchspace.architecture_to_score(architecture_string=a, score=score_name)
                     for score_name in self.score_names]).reshape(-1,1)
-                for a in self.network_pool]
+                for a in self.networks_pool]
         )
         # computing the mean and std of the scores for the network pool considered   
         self.scores_mean, self.scores_std = np.vstack(
@@ -428,7 +428,7 @@ class OscarEnv(NASEnv):
         Sets the hardware costs based on the latency of the networks within the network pool on the target device.
         """
         self.hardware_costs = np.fromiter(
-            map(lambda a: self.searchspace.architecture_to_score(a, score=f"{self.target_device}_latency"), self.network_pool), 
+            map(lambda a: self.searchspace.architecture_to_score(a, score=f"{self.target_device}_latency"), self.networks_pool), 
             dtype="float"
         )
 
