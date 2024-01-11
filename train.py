@@ -49,7 +49,7 @@ def parse_args()->object:
     parser.add_argument("--verbose", default=0, type=int, help="Verbosity value")
     parser.add_argument("--train-timesteps", default=1e5, type=float, help="Number of timesteps to train the RL algorithm with")
     parser.add_argument("--evaluation-frequency", default=1e4, type = float, help="Frequency with which to evaluate policy during training.")
-    parser.add_argument("--history-size", default=5, type=int, help="Number of previous states to be used in history-based policy")
+    parser.add_argument("--history-len", default=5, type=int, help="Number of previous states to be used in history-based policy")
     parser.add_argument("--test-episodes", default=25, type=int, help="Number of test episodes carried out during periodic evaluation")
     parser.add_argument("--seed", default=777, type=int, help="Random seed setted")
     parser.add_argument("--gamma", default=0.6, type=float, help="Discount factor")
@@ -90,7 +90,7 @@ def main():
     verbose = args.verbose
     train_timesteps = int(args.train_timesteps)
     evaluate_every = int(args.evaluation_frequency)
-    history_size = args.history_size
+    history_len = args.history_len
     test_episodes = int(args.test_episodes)
     seed = args.seed
     GAMMA = args.gamma
@@ -116,7 +116,7 @@ def main():
         verbose = 1
         train_timesteps = int(1_000)
         evaluate_every = int(10)
-        history_size = 5  # Default value or specify as needed
+        history_len = 5  # Default value or specify as needed
         test_episodes = 25
         seed = 777  # Default value or specify as needed
         GAMMA = 0.6  # Default value or specify as needed
@@ -155,7 +155,7 @@ def main():
 
     # wrapping env in a history wrapper when needed
     if env.name == "marcella-plus":
-        env = TransitionsHistoryWrapper(env=env, history_size=history_size)
+        env = TransitionsHistoryWrapper(env=env, history_len=history_len)
     
     # build the envs according to spec
     envs = build_vec_env(
@@ -177,8 +177,9 @@ def main():
         print(training_config)
 
     # init wandb run - learning rate -> discount factor -> random seed -> algorithm_env_training_steps
+    maybe_history_len = f"history_len={history_len}/" if env.name == "marcella-plus" else ""
     default_name = f"lr={to_scientific_notation(learning_rate)}"+\
-                   f"/gamma={GAMMA}/seed={seed}/"+\
+                   f"/gamma={GAMMA}/seed={seed}/"+maybe_history_len+\
                    f"{algorithm.upper()}_{env.name}_{to_scientific_notation(train_timesteps)}"
     
 
