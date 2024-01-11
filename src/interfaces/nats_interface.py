@@ -133,12 +133,14 @@ class NATS_Interface(Base_Interface):
         Returns:
             int: Lookup index associated with index.
         """
-        if not (index >= 0 and index <= len(self)):
-            raise ValueError(f"Index out of bounds! Must be between 0 and {len(self)}.")
+        Warning("Deprecated method! Not fixed yet :|")
+        # if not (index >= 0 and index <= len(self)):
+        #     raise ValueError(f"Index out of bounds! Must be between 0 and {len(self)}.")
         
-        return self.architecture_to_index[
-            "{}~0/{}~0/{}~1/{}~0/{}~1/{}~2".format(*(self.index_to_list(architecture_index=index)))
-        ]
+        # return self.architecture_to_index[
+        #     "{}~0/{}~0/{}~1/{}~0/{}~1/{}~2".format(*(self.index_to_list(architecture_index=index)))
+        # ]
+        return None
 
     def get_config_dictionary(self, index:int)->dict:
         """Retrieves the configuration dictionary associated with a given index.
@@ -169,8 +171,7 @@ class NATS_Interface(Base_Interface):
             float: The score value.
         """
         if self.using_lookup:
-            lookup_index = self.index_to_lookup_index(index=index)
-            return self.lookup_table[lookup_index][self.dataset][score_name]
+            return self.lookup_table[index][self.dataset][score_name]
         else:
             # return scores_router[score_name](network_idx=index, dataset=self.dataset)
             raise NotImplementedError("Online scoring not yet implemented for NATS space.")
