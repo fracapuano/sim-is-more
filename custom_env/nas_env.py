@@ -53,9 +53,6 @@ class NASEnv(gym.Env):
             for _ in range(self.n_mods)])
         )
         self.action_space = spaces.MultiDiscrete(action_space)
-        
-        # initializes s_0, timestep counter 
-        self.reset()
     
     @property
     def name(self): 
