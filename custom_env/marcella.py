@@ -1,7 +1,8 @@
-from src import Base_Interface
 from .oscar import OscarEnv
-from typing import Iterable, Text, Dict, Optional
+from itertools import cycle
+from src import Base_Interface
 from numpy.typing import NDArray
+from typing import Iterable, Text, Dict, Optional
 
 class MarcellaEnv(OscarEnv): 
     """
@@ -11,35 +12,45 @@ class MarcellaEnv(OscarEnv):
     """
     def __init__(self, 
                  searchspace_api:Base_Interface,
-                 scores:Iterable[Text]=["naswot_score", "logsynflow_score", "skip_score"],
-                 n_mods:int=1,
-                 max_timesteps:int=50,
-                 latency_cutoff:float=50.,
-                 target_device:Text="raspi4",
-                 weights:Iterable[float]=[0.6, 0.4], 
-                 devices_and_latencies:Dict[Text, float]={"raspi4": 50., "edgegpu": 6., "eyeriss": 7.}):
+                 cutoff_percentile:float=85.,
+                 target_device:Text="edgegpu",
+                 latency_cutoff:Optional[float]=None,
+                 devices:Iterable[Text]=["edgegpu", "eyeriss", "raspi4"],
+                 n_samples:Optional[int]=None,
+                 **kwargs):
+
+        super().__init__(
+            searchspace_api=searchspace_api,
+            cutoff_percentile=cutoff_percentile,
+            latency_cutoff=latency_cutoff,
+            target_device=target_device,
+            n_samples=n_samples,
+            **kwargs
+        )
         """
         This argument stores the list of devices used for multi-tasking training and the respective latency cutoffs. 
         Each different device indeed has diverse distributions for what concern the best latency performance.
         """
         self.device_freeze = True
         self.next_device = None  # this will be set to some device at the first multitask callback call
-        self.devices_and_latencies = devices_and_latencies
+        self.devices = devices
 
-        super().__init__(
-            searchspace_api=searchspace_api,
-            scores=scores,
-            n_mods=n_mods,
-            max_timesteps=max_timesteps,
-            latency_cutoff=latency_cutoff,
-            target_device=target_device,
-            weights=weights,
-        )
+        # >>> START REMOVE
+        self.device_cycle = cycle(devices)
+        # <<< END REMOVE
 
     @property
     def name(self): 
         return "marcella"
     
+    def get_target_device(self):
+        """Returns the current target device."""
+        return self.target_device
+    
+    def get_devices(self):
+        """Returns the list of devices used for multitasking."""
+        return self.devices
+
     def change_device(self):
         """
         Change the target device based on random selection if device freeze is not enabled.
@@ -54,7 +65,7 @@ class MarcellaEnv(OscarEnv):
         """
         if not self.device_freeze:
             self.target_device = self.next_device
-            self.latency_cutoff = self.devices_and_latencies[self.next_device]
+            self.max_latency = self.get_max_latency(self, percentile=self.cutoff_percentile)
             # entered the loop because device freeze was False, switch sets it to True
             self.device_freeze = True
 
@@ -88,11 +99,21 @@ class MarcellaEnv(OscarEnv):
     
     def reset(self, seed:Optional[int]=None)->NDArray:
         """Resets custom env attributes."""
-        super().reset(seed=seed)
 
         self._observation = self.observation_space.sample()
-        self.change_device()
+        # self.change_device()
+        # >>> START REMOVE
+        self.target_device = next(self.device_cycle)
+        # <<< END REMOVE
+        
+        # clearing the buffer of observation collected
+        self.observations_buffer.clear()
+        # updating the current network
         self.update_current_net()
+        # recomputing the hardware costs after the device switch
+        self._set_hardware_costs()
+        # resetting the maximal latency allowed
+        self.max_latency = self.get_max_latency()
 
         self.timestep_counter= 0
 
