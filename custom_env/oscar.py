@@ -17,8 +17,8 @@ import matplotlib.pyplot as plt
 from operator import itemgetter
 from numpy.typing import NDArray
 from .utils import NASIndividual
-from typing import Iterable, Text, Tuple, Dict, Optional
 from scipy.stats import percentileofscore
+from typing import Iterable, Text, Tuple, Dict, Optional
 
 
 class OscarEnv(NASEnv):
@@ -286,7 +286,7 @@ class OscarEnv(NASEnv):
 
         training_free_coefficients = np.ones(len(self.score_names)) / len(self.score_names)
         training_free_score = \
-            np.array(itemgetter(*self.score_names)(self.current_net._scores)) @ training_free_coefficients
+            np.array(itemgetter(*self.score_names)(self.current_net._scores)).reshape(-1,) @ training_free_coefficients
         
         info_dict = {
             "current_network": self.current_net.architecture,
