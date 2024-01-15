@@ -121,50 +121,6 @@ class OscarEnv(NASEnv):
             percentile)
         )
 
-    def init_networks_pool(self, n_samples: Optional[int]=None):
-        """
-        Initializes the networks pool by randomly selecting choices from the searchspace.
-
-        Args:
-            n_samples (int, optional): Number of samples to be drawn from the searchspace. 
-                If not provided, defaults to the length of the searchspace.
-
-        Returns:
-            None
-        """
-        self.n_samples = n_samples if n_samples is not None else len(self.searchspace)
-        # initializes the network pool with n_samples random choices from the searchspace
-        self.networks_pool = list(random.choices(self.searchspace, k=self.n_samples))
-    
-    def get_max_timesteps(self)->int:
-        return self.max_timesteps
-
-    def normalize_score(self, score_value:float, score_name:Text, type:Text="std")->float:
-        """
-        Normalize the given score value using a specified normalization type.
-
-        Args:
-            score_value (float): The score value to be normalized.
-            score_name (Text): The name of the score used for normalization.
-            type (Text, optional): The type of normalization to be applied. Defaults to "std".
-
-        Returns:
-            float: The normalized score value.
-
-        Raises:
-            ValueError: If the specified normalization type is not available.
-
-        Note:
-            The available normalization types are:
-            - "std": Standard score normalization using mean and standard deviation.
-        """
-        if type == "std":
-            score_mean, score_std = self.searchspace.get_score_mean_and_std(score_name)
-            
-            return (score_value - score_mean) / score_std
-        else:
-            raise ValueError(f"Normalization type {type} not available!")
-
     def fitness_function(self, individual:NASIndividual)->NASIndividual: 
         """
         Directly overwrites the fitness attribute for a given individual.
@@ -204,78 +160,17 @@ class OscarEnv(NASEnv):
         
         return individual
 
-    def mount_architecture(self, empty_individual:NASIndividual, architecture_encoded:NDArray)->NASIndividual:
+    def compute_hardware_cost(self, architecture_list:Iterable[Text])->float:
         """
-        Mount the architecture on the empty individual using the specified architecture encoding.
+        Computes the hardware cost based on the given architecture list.
 
         Args:
-            empty_individual (NASIndividual): The empty individual to be mounted with the architecture.
-            architecture_encoded (NDArray): The encoded architecture representation.
+            architecture_list (Iterable[Text]): The list representation of the architecture.
 
         Returns:
-            NASIndividual: The individual with the updated architecture.
-
-        Note:
-            The method decodes the architecture from the encoding, converts it to a list representation,
-            and updates the architecture of the empty individual with the decoded architecture.
+            float: The computed hardware cost.
         """
-        # architecture encoded -> architecture decoded -> architecture list -> individual with updated architecture list
-        empty_individual.update_architecture(
-            self.searchspace.architecture_to_list(
-                architecture_string=self.searchspace.decode_architecture(
-                    architecture_encoded=architecture_encoded, 
-                    onehot=False
-                    )
-                )
-            )
-        
-        return empty_individual
-
-    def update_current_net(self):
-        """
-        Update the current net individual with the encoded architecture stored in the observation.
-
-        Note:
-            The method initializes the current net individual and mounts the architecture on it using the encoded observation.
-
-        """
-        # initialize the current net individual
-        self.current_net = NASIndividual(architecture=None, 
-                                         index=None, 
-                                         architecture_string_to_idx=self.searchspace.architecture_to_index)
-        
-        self.current_net = self.mount_architecture(self.current_net, self._observation["architecture"])
-        
-        # updating the fitness value
-        self.current_net = self.fitness_function(self.current_net)
-
-    def perform_modification(self, new_individual:NDArray, modification:Tuple[int, int])->NDArray: 
-        """
-        Perform modification on the new individual based on the specified modification tuple.
-
-        Args:
-            new_individual (NDArray): The new individual to be modified.
-            modification (Tuple[int, int]): The modification tuple specifying where and how to make the modification.
-
-        Returns:
-            NDArray: The modified individual.
-
-        Note:
-            The modification operation updates the new individual based on the specified modification tuple.
-        """
-
-        try: 
-            where_to_change, how_to_change = modification
-            # overwriting mutant_locus with mutant_gene
-            new_individual[where_to_change] = how_to_change
-        except IndexError: 
-            """
-            Index error is caused by modification[0] being outside of observation boundaries. 
-            This corresponds to perform the "leave-as-is" action
-            """
-            pass
-
-        return new_individual
+        return self.searchspace.list_to_score(input_list=architecture_list, score=f"{self.target_device}_latency")
 
     def _get_obs(self)->Dict[Text, spaces.Space]:
         return self._observation
@@ -299,6 +194,7 @@ class OscarEnv(NASEnv):
             "is_truncated": self.is_truncated(),
             # test_accuracy is obtained from a lookup table and never accessed during training
             "test_accuracy": self.searchspace.list_to_accuracy(input_list=self.current_net.architecture),
+            "networks_seen": len(self.networks_seen)
         }
         info_dict |= self.current_net._scores
         
@@ -311,15 +207,6 @@ class OscarEnv(NASEnv):
         """
         return self._observation["latency_value"].item() >= self.max_latency
 
-    def reset(self, seed:Optional[int]=None)->NDArray:
-        """Resets custom env attributes."""
-        self._observation = self.observation_space.sample()
-        self.update_current_net()
-        self.timestep_counter= 0
-        self.observations_buffer.clear()
-
-        return self._get_obs(), self._get_info()
-
     def get_reward(self, new_individual:NASIndividual)->float:
         """
         Compute the reward associated to the modification operation.
@@ -327,7 +214,8 @@ class OscarEnv(NASEnv):
         """
         new_individual_fitness, current_individual_fitness = new_individual.fitness, self.current_net.fitness
         # we want to reward actions that increase the value of fitness (proxy for increase in test accuracy)
-        return new_individual_fitness - current_individual_fitness
+        # return new_individual_fitness - current_individual_fitness
+        return new_individual_fitness 
 
     def step(self, action:NDArray)->Tuple[NDArray, float, bool, dict]: 
         """Steps the episode having a given action.
@@ -372,10 +260,7 @@ class OscarEnv(NASEnv):
         self.update_current_net()
         # update current obs latency value
         self._observation["latency_value"] = \
-            np.array(
-                [self.searchspace.list_to_score(input_list=self.current_net.architecture, score=f"{self.target_device}_latency")],
-                dtype=np.float32
-            )
+            np.array([self.compute_hardware_cost(architecture_list=self.current_net.architecture)], dtype=np.float32)
         
         # check whether or not the episode is terminated
         terminated = self.is_terminated()
@@ -390,7 +275,19 @@ class OscarEnv(NASEnv):
         # storing the reward in a variable to be accessed by the render method
         self.step_reward = reward
 
+        # keeping track of the number of networks seen from initialization
+        self.networks_seen.add(self.searchspace.list_to_architecture(self.current_net.architecture))
+
         return self._observation, reward, terminated, truncated, info
+
+    def reset(self, seed:Optional[int]=None)->NDArray:
+        """Resets custom env attributes."""
+        self._observation = self.observation_space.sample()
+        self.update_current_net()
+        self.timestep_counter= 0
+        self.observations_buffer.clear()
+
+        return self._get_obs(), self._get_info()
     
     def _set_combined_scores(self):
         """
