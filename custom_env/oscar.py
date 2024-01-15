@@ -210,12 +210,9 @@ class OscarEnv(NASEnv):
     def get_reward(self, new_individual:NASIndividual)->float:
         """
         Compute the reward associated to the modification operation.
-        Here, the reward is defined as the gain in fitness between the original and new invidual.
+        Here, the reward is the fitness of the newly generated individual
         """
-        new_individual_fitness, current_individual_fitness = new_individual.fitness, self.current_net.fitness
-        # we want to reward actions that increase the value of fitness (proxy for increase in test accuracy)
-        # return new_individual_fitness - current_individual_fitness
-        return new_individual_fitness 
+        return new_individual.fitness
 
     def step(self, action:NDArray)->Tuple[NDArray, float, bool, dict]: 
         """Steps the episode having a given action.
@@ -269,8 +266,8 @@ class OscarEnv(NASEnv):
         # retrieve info
         info = self._get_info()
 
-        if terminated:
-            reward = -1
+        # if terminated:
+        #     reward = -1
 
         # storing the reward in a variable to be accessed by the render method
         self.step_reward = reward
