@@ -52,7 +52,7 @@ class OscarEnv(NASEnv):
         self.target_device = target_device
         # casting weights to numpy array
         self.weights = np.array(weights)
-        # initializing the observations buffer size
+        # initializing the observations buffer size, for rendering purposes
         self.observations_buffer_size = observation_buffer_size
         self.observations_buffer = deque(maxlen=self.observations_buffer_size)
         
