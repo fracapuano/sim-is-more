@@ -251,6 +251,52 @@ class NATS_Interface(Base_Interface):
         
         return getattr(self, f"mean_{score_name}"), getattr(self, f"std_{score_name}")
 
+    def get_score_min_and_max(self, score_name: Text, sample_size: Optional[int] = None) -> Tuple[float, float]:
+        """
+        Calculate the minimum and maximum of the score value across (a fraction of) the dataset 
+        for the given score name.
+
+        Args:
+            score_name (Text): The name of the score for which to calculate the min and max.
+            sample_size (Optional[int]): The number of items to use to calculate the min and max. 
+                                        If None, the min and max are calculated across the entire dataset. 
+                                        Defaults to None.
+
+        Returns:
+            Tuple[float, float]: The minimum and maximum of the score values.
+        """
+        
+        if not self.using_lookup:
+            n_networks = sample_size if sample_size is not None else len(self)
+
+            if not hasattr(self, f"{score_name}_values"):
+                random_indices = np.random.choice(len(self), size=n_networks, replace=False)
+                score_values = np.zeros(n_networks)
+                for idx, i in tqdm(enumerate(random_indices), desc=f"Computing {score_name} values..."):
+                    score_values[idx] = self.compute_score(score_name=score_name, index=i)
+                
+                setattr(self, f"{score_name}_values", score_values)
+
+            if not hasattr(self, f"min_{score_name}"):
+                setattr(self, f"min_{score_name}", getattr(self, f"{score_name}_values").min())
+            
+            if not hasattr(self, f"max_{score_name}"):
+                setattr(self, f"max_{score_name}", getattr(self, f"{score_name}_values").max())
+
+        else:
+            if score_name in ["naswot_score", "logsynflow_score", "skip_score"]:
+                if not hasattr(self, f"min_{score_name}"):
+                    setattr(self, f"min_{score_name}", np.array([self.lookup_table[i][self.dataset][score_name] for i in range(len(self))]).min())
+                if not hasattr(self, f"max_{score_name}"):
+                    setattr(self, f"max_{score_name}", np.array([self.lookup_table[i][self.dataset][score_name] for i in range(len(self))]).max())
+
+            if not hasattr(self, f"min_{score_name}"):
+                setattr(self, f"min_{score_name}", self._data.get(f"min_{score_name}", -float("inf")))
+            if not hasattr(self, f"max_{score_name}"):
+                setattr(self, f"max_{score_name}", self._data.get(f"max_{score_name}", float("inf")))
+
+        return getattr(self, f"min_{score_name}"), getattr(self, f"max_{score_name}")
+
     def generate_random_samples(self, n_samples:int=10)->Tuple[List[Text], List[int]]:
         """Generate a group of architectures chosen at random"""
         idxs = np.random.choice(len(self), size=n_samples, replace=False)
