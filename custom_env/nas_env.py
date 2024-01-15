@@ -20,7 +20,8 @@ class NASEnv(gym.Env):
                  searchspace_api:Base_Interface,
                  scores:Iterable[Text]=["naswot_score", "logsynflow_score", "skip_score"], 
                  n_mods:int=1,
-                 max_timesteps:int=50):
+                 max_timesteps:int=50, 
+                 normalization_type:Optional[Text]=None):
         # the NAS searchspace is defined at the searchspace_api level
         self.searchspace = searchspace_api
         # the score names are used to evaluate each candidate architecture in a training-free fashion
@@ -29,6 +30,8 @@ class NASEnv(gym.Env):
         self.n_mods = n_mods
         # this variable defines the maximum number of timesteps per episode
         self.max_timesteps = max_timesteps
+        # this variable defines the type of normalization to be applied to the scores
+        self.normalization_type = normalization_type if normalization_type is not None else "std"
 
         """
         Each individual network can be univoquely identified with `m` (`m = m(searchspace)`) characters. 
@@ -83,10 +86,14 @@ class NASEnv(gym.Env):
         Note:
             The available normalization types are:
             - "std": Standard score normalization using mean and standard deviation.
+            - "minmax": Min-max score normalization using min and max values.
         """
         if type == "std":
             score_mean, score_std = self.searchspace.get_score_mean_and_std(score_name)
             return (score_value - score_mean) / score_std
+        elif type == "minmax":
+            score_min, score_max = self.searchspace.get_score_min_and_max(score_name)
+            return (score_value - score_min) / (score_max - score_min)
         else:
             raise ValueError(f"Normalization type {type} not available!")
     
