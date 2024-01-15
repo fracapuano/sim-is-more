@@ -14,6 +14,8 @@
     },
     "mean_edgegpu_latency": 5.0511,
     "std_edgegpu_latency": 1.5268,
+    "min_edgegpu_latency": 0.5014,
+    "max_edgegpu_latency": 11.62,
     "raspi4_latency": {
         "skip_connect": 0.5562589746599162,
         "nor_conv_1x1": 3.4747286479978357,
@@ -23,6 +25,8 @@
     },
     "mean_raspi4_latency": 27.523,
     "std_raspi4_latency": 15.213,
+    "min_raspi4_latency": 0.01128,
+    "max_raspi4_latency": 98.89,
     "pixel3_latency": {
         "skip_connect": 0.25687139999999997,
         "nor_conv_1x1": 0.8786893333333332,
@@ -32,6 +36,8 @@
     },
     "mean_pixel3_latency": 11.214,
     "std_pixel3_latency": 6.2590,
+    "min_pixel3_latency": 0.003277,
+    "max_pixel3_latency": 36.7665,
     "eyeriss_latency": {
         "skip_connect": 0.2523426666666667,
         "nor_conv_1x1": 0.4735266666666669,
@@ -50,6 +56,8 @@
     },
     "mean_fpga_latency": 3.7518,
     "std_fpga_latency": 1.1290,
+    "min_fpga_latency": 1.1330,
+    "max_fpga_latency": 8.678,
     "naswot_mean": 739.2,
     "naswot_std": 99.95,
     "logsynflow_mean": 1.754e6,
