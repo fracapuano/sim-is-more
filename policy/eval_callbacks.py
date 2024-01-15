@@ -155,8 +155,6 @@ class PeriodicEvalCallback(BaseCallback):
         })
 
         wandb.log({"Number of networks observed": self.model.get_env().env_method("get_number_of_networks")[0]})
-
-
         
         return True
     
