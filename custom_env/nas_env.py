@@ -60,6 +60,10 @@ class NASEnv(gym.Env):
     @property
     def name(self): 
         return "nasenv"
+    
+    def get_number_of_networks(self)->int:
+        """Returns the number of networks seen so far."""
+        return len(self.networks_seen)
 
     def normalize_score(self, score_value:float, score_name:Text, type:Text="std")->float:
         """

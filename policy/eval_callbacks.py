@@ -148,6 +148,8 @@ class PeriodicEvalCallback(BaseCallback):
              "Mean Cumulative Reward": mean_cum_reward,
              "Std of Cumulative Reward": std_cum_reward,
         })
+
+        wandb.log({"Number of networks observed": self.model.get_env().env_method("get_number_of_networks")[0]})
         
         return True
     
