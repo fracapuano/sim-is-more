@@ -35,10 +35,6 @@ class MarcellaEnv(OscarEnv):
         self.next_device = None  # this will be set to some device at the first multitask callback call
         self.devices = devices
 
-        # >>> START REMOVE
-        self.device_cycle = cycle(devices)
-        # <<< END REMOVE
-
     @property
     def name(self): 
         return "marcella"
@@ -101,10 +97,7 @@ class MarcellaEnv(OscarEnv):
         """Resets custom env attributes."""
 
         self._observation = self.observation_space.sample()
-        # self.change_device()
-        # >>> START REMOVE
-        self.target_device = next(self.device_cycle)
-        # <<< END REMOVE
+        self.change_device()
         
         # clearing the buffer of observation collected
         self.observations_buffer.clear()

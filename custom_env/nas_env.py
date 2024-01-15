@@ -1,10 +1,11 @@
-import gymnasium as gym
-from gymnasium import spaces
+import random
 import numpy as np
+import gymnasium as gym
 from itertools import chain
-from numpy.typing import NDArray
+from gymnasium import spaces
 from src import Base_Interface
 from .utils import NASIndividual
+from numpy.typing import NDArray
 from typing import Iterable, Tuple, Text, Optional
 
 class NASEnv(gym.Env): 
@@ -53,6 +54,8 @@ class NASEnv(gym.Env):
             for _ in range(self.n_mods)])
         )
         self.action_space = spaces.MultiDiscrete(action_space)
+
+        self.networks_seen = set()
     
     @property
     def name(self): 
@@ -147,7 +150,10 @@ class NASEnv(gym.Env):
                                          index=None, 
                                          architecture_string_to_idx=self.searchspace.architecture_to_index)
         
-        self.current_net = self.mount_architecture(self.current_net, self._observation)
+        # oscar and marcella(+) have dict-based observation spaces
+        net = self._observation if not isinstance(self._observation, dict) else self._observation.get("architecture", None)
+
+        self.current_net = self.mount_architecture(self.current_net, net)
         
         # updating the fitness value
         self.current_net = self.fitness_function(self.current_net)
@@ -276,3 +282,22 @@ class NASEnv(gym.Env):
         self.timestep_counter= 0
 
         return self._get_obs(), self._get_info()
+    
+    def init_networks_pool(self, n_samples: Optional[int]=None):
+        """
+        Initializes the networks pool by randomly selecting choices from the searchspace.
+
+        Args:
+            n_samples (int, optional): Number of samples to be drawn from the searchspace. 
+                If not provided, defaults to the length of the searchspace.
+
+        Returns:
+            None
+        """
+        self.n_samples = n_samples if n_samples is not None else len(self.searchspace)
+        # initializes the network pool with n_samples random choices from the searchspace
+        self.networks_pool = list(random.choices(self.searchspace, k=self.n_samples))
+
+    def get_max_timesteps(self)->int:
+        return self.max_timesteps
+    
