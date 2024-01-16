@@ -1,6 +1,8 @@
 import os
+import json
 import wandb
 import torch
+import warnings
 import argparse
 from policy import (
     PeriodicEvalCallback, 
@@ -8,6 +10,7 @@ from policy import (
     TransitionsHistoryWrapper
 )
 from src import (
+    Base_Interface,
     NATS_Interface,
     to_scientific_notation, 
     seed_all
@@ -40,20 +43,25 @@ def parse_args()->object:
                         choices=["nats"], help=f"Searchspace to be used. One in ['nats']")  # fbnet will follow
     parser.add_argument("--target-device", default="edgegpu", 
                         choices=["edgegpu", "raspi4", "pixel3", "eyeriss", "fpga"], type=str, help="Target device to be used.")
+    parser.add_argument("--task-weigth", default=0.5, type=float, help="Task-associated weight in the reward function. This directly balances the hardware performance.")
+    parser.add_argument("--hardware-weigth", default=0.5, type=float, help="Hardware-associated weight in the reward function. This directly balances the hardware performance.")
+    parser.add_argument("--score-list", nargs="*", type=str, default=["naswot_score", "logsynflow_score", "skip_score"])
+    parser.add_argument("--normalization-type", default="std", type=str, choices=["std", "minmax"], help="Normalization type to be used for hardware cost. One in ['std', 'minmax']")
     
     """The following args help define the training procedure."""
     parser.add_argument("--algorithm", default="PPO", type=str, 
                         choices=["ppo", "trpo", "a2c"], help="RL Algorithm. One in ['ppo', 'trpo', 'a2c']")
-    parser.add_argument("--env", default="oscar", type=str,
+    parser.add_argument("--env_name", default="oscar", type=str,
                         choices=list(envs_dict.keys()), help=f"Environment to be used. One in {list(envs_dict.keys())}")
     parser.add_argument("--verbose", default=0, type=int, help="Verbosity value")
     parser.add_argument("--train-timesteps", default=1e5, type=float, help="Number of timesteps to train the RL algorithm with")
-    parser.add_argument("--evaluation-frequency", default=1e4, type = float, help="Frequency with which to evaluate policy during training.")
+    parser.add_argument("--evaluate-every", default=1e4, type = float, help="Frequency with which to evaluate policy during training.")
     parser.add_argument("--history-len", default=5, type=int, help="Number of previous states to be used in history-based policy")
     parser.add_argument("--test-episodes", default=25, type=int, help="Number of test episodes carried out during periodic evaluation")
     parser.add_argument("--seed", default=777, type=int, help="Random seed setted")
     parser.add_argument("--gamma", default=0.6, type=float, help="Discount factor")
     parser.add_argument("--learning-rate", default=3e-4, type=float, help="Learning rate for Deep RL training")
+    parser.add_argument("--entropy-coef", default=0., type=float, help="Entropy coefficient for A2C-based training")
     parser.add_argument("--n-envs", default=1, type=int, help="Number of different envs to create at training time")
     parser.add_argument("--parallel-envs", default=True, type=boolean_string, help="Whether or not to train the agent using envs in multiprocessing")
     parser.add_argument("--offline", action="store_true", help="Wandb does not sync anything to the cloud")
@@ -73,158 +81,135 @@ def parse_args()->object:
     
     return parser.parse_args()
 
-def main():
-    """Performs training and logs info to wandb."""
-    args = parse_args()
+def create_searchspace(searchspace:str, dataset:str)->Base_Interface:
+    """
+    Creates a search space based on the given search space type and dataset.
 
-    # unpacking args
-    args = parse_args()
+    Args:
+        searchspace (str): The type of search space to create.
+        dataset (str): The dataset to use for creating the search space.
 
-    # Unpacking args in the same order as they are defined in parse_args
-    dataset = args.dataset
-    searchspace = args.searchspace
-    target_device = args.target_device
+    Returns:
+        Base_Interface: An instance of the search space interface.
 
-    algorithm = args.algorithm
-    env_name = args.env
-    verbose = args.verbose
-    train_timesteps = int(args.train_timesteps)
-    evaluate_every = int(args.evaluation_frequency)
-    history_len = args.history_len
-    test_episodes = int(args.test_episodes)
-    seed = args.seed
-    GAMMA = args.gamma
-    learning_rate = args.learning_rate
-    n_envs = args.n_envs
-    parallel_envs = args.parallel_envs
-    offline = args.offline
-    epsilon_scheduling = args.epsilon_scheduling
-    min_eps = args.min_eps
-    max_eps = args.max_eps
-    use_wandb_callback = args.use_wandb_callback
-
-    resume_training = args.resume_training
-    model_path = args.model_path
-
-    if args.debug:
-        # Debug mode settings in the same order
-        dataset = "cifar10"
-        searchspace = "nats"
-        target_device = "edgegpu"
-        algorithm = "PPO"
-        env_name = "oscar"
-        verbose = 1
-        train_timesteps = int(1_000)
-        evaluate_every = int(10)
-        history_len = 5  # Default value or specify as needed
-        test_episodes = 25
-        seed = 777  # Default value or specify as needed
-        GAMMA = 0.6  # Default value or specify as needed
-        learning_rate = 3e-4  # Default value or specify as needed
-        n_envs = 3
-        parallel_envs = False
-        offline = False
-        epsilon_scheduling = "const"
-        min_eps = 0.1  # Default value or specify as needed
-        max_eps = 0.3  # Default value or specify as needed
-        use_wandb_callback = True
-        # resume_training and model_path can be set as required
-        # resume_training=False
-        # model_path="models/PPO_oscar_2e6_raspi4_6040.zip"
-
-    # silencing wandb output
-    # os.environ["WANDB_SILENT"] = "true" 
-
+    Raises:
+        NotImplementedError: If the specified search space is not implemented yet.
+    """
     if searchspace.lower() == "nats":
-            searchspace_interface = NATS_Interface(dataset=dataset)
+        return NATS_Interface(dataset=dataset)
     else:
         raise NotImplementedError(
             f"Searchspace {searchspace} not implemented yet. Searchspaces that will be implemented: ['nats', 'fbnet']. FBNet to do."
         )
+
+def main():
+    """Performs training and logs info to wandb."""
+    args = parse_args()
+
+    if args.debug:
+        with open("default_training.json", "r") as f:
+            default_args = argparse.Namespace(**json.load(f))
+            # overriding default args with the ones passed as arguments
+            for key, value in vars(default_args).items():
+                setattr(args, key, value)
+    
+    # silencing wandb output
+    # os.environ["WANDB_SILENT"] = "true" 
     
     # set seed for reproducibility
-    seed_all(seed=seed)
+    seed_all(seed=args.seed)
     # to allow multiprocessing of various envs
-    torch.set_num_threads(n_envs)
-
+    torch.set_num_threads(args.n_envs)
+    
+    searchspace_interface = create_searchspace(searchspace=args.searchspace, dataset=args.dataset)
     # create env (gym.Env)
-    env = envs_dict[env_name.lower()](searchspace_api=searchspace_interface)
-
-    # changing the target device based on user input
-    env.target_device = target_device
+    env = envs_dict[args.env_name.lower()](
+        searchspace_api=searchspace_interface, 
+        scores=args.score_list,
+        target_device=args.target_device,
+        weights=[args.task_weigth, args.hardware_weigth],
+        normalization_type=args.normalization_type
+    )
 
     # wrapping env in a history wrapper when needed
     if env.name == "marcella-plus":
-        env = TransitionsHistoryWrapper(env=env, history_len=history_len)
+        env = TransitionsHistoryWrapper(env=env, history_len=args.history_len)
     
     # build the envs according to spec
     envs = build_vec_env(
         env_=env,
-        n_envs=n_envs, 
-        subprocess=parallel_envs)
+        n_envs=args.n_envs, 
+        subprocess=args.parallel_envs)
     
     # training config dictionary
     training_config = dict(
-        algorithm=algorithm,
+        algorithm=args.algorithm,
         env_name=env.name,
-        discount_factor=GAMMA,
-        train_timesteps=to_scientific_notation(train_timesteps),
-        random_seed=seed,
-        target_device=target_device
+        gamma=args.gamma,
+        train_timesteps=to_scientific_notation(args.train_timesteps),
+        random_seed=args.seed,
+        target_device=args.target_device,
+        task_weigth=args.task_weigth,
+        hardware_weigth=args.hardware_weigth,
+        score_list=args.score_list,
+        learning_rate=args.learning_rate,
+        epsilon_scheduling=args.epsilon_scheduling,
+        min_eps=args.min_eps,
+        max_eps=args.max_eps,
+        history_len=args.history_len
     )
 
-    if verbose > 0: 
+    if args.verbose > 0: 
         print(training_config)
-
-    # init wandb run - learning rate -> discount factor -> random seed -> algorithm_env_training_steps
-    maybe_history_len = f"history_len={history_len}/" if env.name == "marcella-plus" else ""
-    default_name = f"lr={to_scientific_notation(learning_rate)}"+\
-                   f"/gamma={GAMMA}/seed={seed}/"+maybe_history_len+\
-                   f"{algorithm.upper()}_{env.name}_{to_scientific_notation(train_timesteps)}"
     
-
     run = wandb.init(
         project="Debug-Oscar",
         config=training_config,
-        name=default_name,
-        mode="offline" if offline else "online",
-        sync_tensorboard=True if use_wandb_callback else None
+        mode="offline" if args.offline else "online",
+        sync_tensorboard=True if args.use_wandb_callback else None
     )
     
     # best models are saved in models - when specialized for target hardware are stored in specific subfolders
-    best_model_path = f"models/{env_name}/{target_device}/{run.name}"
+    best_model_path = f"models/{args.env_name}/{args.target_device}/{run.name}"
+    
+    # dumping training config to json file
+    if not os.path.exists(best_model_path):
+        os.makedirs(best_model_path)
+    with open(f"{best_model_path}/training_config.json", "w+") as f:
+        json.dump(vars(args), f, indent=4)
 
     # this callback is wrapped in `EveryNTimesteps`
     inner_callback = PeriodicEvalCallback(
         env=envs,
-        n_eval_episodes=test_episodes, 
+        n_eval_episodes=args.test_episodes, 
         best_model_path=best_model_path
     )
     
     # invoke inner_callback every `evaluate_every` timesteps
-    evaluation_callback = EveryNTimesteps(n_steps=evaluate_every, callback=inner_callback)
+    evaluation_callback = EveryNTimesteps(n_steps=args.evaluate_every, callback=inner_callback)
     callback_list = [evaluation_callback]
 
     if env.name == "marcella":
         changedevice_callback = ChangeDevice_Callback()
         # every 1 percent of the training procedure this procedure will change the underlying target device
-        marcella_callback = EveryNTimesteps(n_steps=int(train_timesteps/100), callback=changedevice_callback)
+        marcella_callback = EveryNTimesteps(n_steps=int(args.train_timesteps/100), callback=changedevice_callback)
         callback_list.append(marcella_callback)
 
     # instantiate a policy object
     policy = Policy(
-        algo=algorithm,
+        algo=args.algorithm,
         env=envs,
-        lr=learning_rate,
-        gamma=GAMMA,
-        seed=seed,
-        load_from_pathname=model_path if resume_training else None)
+        lr=args.learning_rate,
+        gamma=args.gamma,
+        seed=args.seed,
+        load_from_pathname=args.model_path if args.resume_training else None,
+        entropy_coef=args.entropy_coef)
     
     # optionally triggers the epsilon scheduler to be triggered!
-    if epsilon_scheduling.lower() != "const":
-        policy.set_epsilon_scheduler(kind=epsilon_scheduling, start_epsilon=max_eps, end_epsilon=min_eps)
+    if args.epsilon_scheduling.lower() != "const":
+        policy.set_epsilon_scheduler(kind=args.epsilon_scheduling, start_epsilon=args.max_eps, end_epsilon=args.min_eps)
     
-    if use_wandb_callback:
+    if args.use_wandb_callback:
         policy.model.tensorboard_log = f"runs/{run.id}"
         # also adding wandb callback to the picture here
         callback_list.append(
@@ -234,24 +219,26 @@ def main():
                 )
             )
         
-    msg = f"Starting to train: {algorithm.upper()} on {env_name} for {to_scientific_notation(train_timesteps)} timesteps"
+    msg = f"Starting to train: {args.algorithm.upper()} on {args.env_name} for {to_scientific_notation(args.train_timesteps)} timesteps"
     print(msg)
     
     # creating one callback list only
     training_callbacks = CallbackList(callback_list)
-    # training policy using multiple callbacks
-    avg_return, std_return, *_ = policy.train(
-        timesteps=train_timesteps,
-        n_eval_episodes=test_episodes,
-        callback_list=training_callbacks,
-        return_best_model=True, 
-        best_model_save_path=best_model_path
-    )
+    # training policy using multiple callbacks - suppressing warnings during training
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        avg_return, std_return, *_ = policy.train(
+            timesteps=args.train_timesteps,
+            n_eval_episodes=args.test_episodes,
+            callback_list=training_callbacks,
+            return_best_model=True, 
+            best_model_save_path=best_model_path
+        )
     # print the number of times a better env is found
-    if verbose > 0: 
+    if args.verbose > 0: 
         msg = f"""
             During training, the best model has been updated: {evaluation_callback.callback.bests_found} \
-            times (out of {int(train_timesteps//evaluate_every)} evaluations)
+            times (out of {int(args.train_timesteps//args.evaluate_every)} evaluations)
         """
         print(msg)
         

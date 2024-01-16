@@ -27,13 +27,16 @@ class Policy:
                  device:str="cpu",
                  seed:int=None,
                  gamma:float=0.99,
-                 load_from_pathname:str=None):
+                 load_from_pathname:str=None, 
+                 entropy_coef:float=0.0):
 
         self.seed = seed
         self.device = device
         self.env = env
         self.algo = algo.lower()
         self.gamma = gamma
+        self.entropy_coef = entropy_coef if algo.lower() != "trpo" else None
+
         self.obs_is_dict = isinstance(self.env.observation_space, spaces.Dict)
 
         # either train from scratch (create_model) or from partially trained agent (load_model)
@@ -61,7 +64,9 @@ class Policy:
                         learning_rate=lr,
                         seed=self.seed, 
                         device=self.device, 
-                        gamma=self.gamma)
+                        gamma=self.gamma, 
+                        ent_coef=self.entropy_coef
+                        )
 
         elif algo == 'a2c':
             model = A2C("MlpPolicy" if not self.obs_is_dict else "MultiInputPolicy", 
@@ -69,7 +74,9 @@ class Policy:
                         learning_rate=lr,
                         seed=self.seed, 
                         device=self.device, 
-                        gamma=self.gamma)
+                        gamma=self.gamma, 
+                        ent_coef=self.entropy_coef
+                        )
         
         elif algo == 'trpo': 
             model = TRPO("MlpPolicy" if not self.obs_is_dict else "MultiInputPolicy", 

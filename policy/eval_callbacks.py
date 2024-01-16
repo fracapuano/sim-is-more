@@ -132,6 +132,11 @@ class PeriodicEvalCallback(BaseCallback):
                                     title=f"Average Evolution of {metric}")
                 }
             )
+            # logging the average initial and terminal values for the metric considered
+            wandb.log({
+                f"Average initial {metric}": tracked_values[0],
+                f"Average terminal {metric}": tracked_values[-1]
+            })
         
         # How many episodes were terminated during the evaluation
         wandb.log({"TerminationRate": self.episodes_tracker.number_of_terminated_episodes / self.n_eval_episodes})

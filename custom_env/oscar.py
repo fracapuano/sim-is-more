@@ -40,19 +40,21 @@ class OscarEnv(NASEnv):
                  weights:Iterable[float]=[0.6, 0.4],
                  latency_cutoff:Optional[float]=None,
                  observation_buffer_size:int=10,
+                 normalization_type:Optional[Text]=None,
                  n_samples:Optional[int]=None):
         
         super().__init__(
             searchspace_api=searchspace_api,
             scores=scores,
             n_mods=n_mods,
-            max_timesteps=max_timesteps
+            max_timesteps=max_timesteps, 
+            normalization_type=normalization_type
         )
         # setting the target device
         self.target_device = target_device
         # casting weights to numpy array
         self.weights = np.array(weights)
-        # initializing the observations buffer size
+        # initializing the observations buffer size, for rendering purposes
         self.observations_buffer_size = observation_buffer_size
         self.observations_buffer = deque(maxlen=self.observations_buffer_size)
         
@@ -135,14 +137,16 @@ class OscarEnv(NASEnv):
             scores = np.array([
                 self.normalize_score(
                     score_value=self.searchspace.list_to_score(input_list=individual.architecture, score=score), 
-                    score_name=score
+                    score_name=score,
+                    type=self.normalization_type
                 )
                 for score in self.score_names
             ])
             hardware_performance = np.array([
                 self.normalize_score(
                     score_value=self.searchspace.list_to_score(input_list=individual.architecture, score=f"{self.target_device}_{metric}"),
-                    score_name=f"{self.target_device}_{metric}"
+                    score_name=f"{self.target_device}_{metric}",
+                    type=self.normalization_type
                 )
                 for metric in ["latency"]  # change here to add more hardware aware metrics
             ])
