@@ -1,7 +1,7 @@
 """Custom callbacks to be used during training to record the learnign process."""
-from stable_baselines3.common.callbacks import BaseCallback
 import numpy as np
 from stable_baselines3.common.vec_env import VecEnv
+from stable_baselines3.common.callbacks import BaseCallback
 
 class ChangeDevice_Callback(BaseCallback): 
     """Custom callback inheriting from `BaseCallback`.
@@ -30,11 +30,11 @@ class ChangeDevice_Callback(BaseCallback):
         """
         # accessing the list of possible devices per env considered - all envs have the same devices, hence [0]
         self.available_devices = list(
-            self.training_env.env_method("get_devices")[0].keys()
+            self.training_env.env_method("get_devices")[0]
         )
         # storing the current hardware used for training
         current_device = self.model.env.env_method("get_target_device") if isinstance(self.model.env, VecEnv) \
-                           else self.model.env.target_device
+                        else self.model.env.target_device
         # stores the target hardware the model has been currently training on
         self.devices_history.append(current_device)
         # sampling the new device here ensures all envs are trained on the same hardware at any given times
