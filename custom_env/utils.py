@@ -6,7 +6,7 @@ from copy import copy
 import numpy as np
 from scipy import signal
 from scipy.stats import truncnorm
-from typing import List, Text, Dict
+from typing import List, Text, Dict, Optional, Iterable
 from numpy.typing import NDArray
 from abc import ABC, abstractmethod
 
@@ -46,9 +46,10 @@ class NASIndividual:
 
 
 def build_vec_env(
-        env_:gym.Env, 
+        env:gym.Env, 
         n_envs:int=1, 
-        subprocess:bool=True)->VecEnv:
+        subprocess:bool=True, 
+        wrappers_list:Optional[Iterable[gym.Wrapper]]=None)->VecEnv:
     """Simply builds an env using default configuration for the environment.
 
     Args: 
@@ -63,9 +64,14 @@ def build_vec_env(
     """
     # define environment
     def make_env():
-        env = copy(env_)
+        new_env = copy(env)
+        if wrappers_list is not None:
+            """Wraps env with a provided wrapping objects."""
+            for wrapper in wrappers_list:
+                new_env = wrapper(new_env)
+        
         """Wraps env with a Monitor object."""
-        wrapped_env = Monitor(env=env)
+        wrapped_env = Monitor(env=new_env)
         return wrapped_env
 
     # vectorized environment, wrapped with Monitor
