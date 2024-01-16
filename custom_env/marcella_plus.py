@@ -62,7 +62,6 @@ class MarcellaPlusEnv(OscarEnv):
         super().__init__(
             searchspace_api=searchspace_api,
             cutoff_percentile=cutoff_percentile,
-            target_device=None,  # removing target device, devices are simulated here
             **kwargs
         )
 
