@@ -19,6 +19,7 @@ from custom_env import (
 from gymnasium import spaces
 from typing import List, Tuple, Union, Dict, Text
 
+
 class Policy:
     def __init__(self,
                  algo:str=None,
@@ -254,9 +255,10 @@ class Policy:
     def set_epsilon_scheduler(self, kind:Text="exp", **kwargs):
         """Sets the scheduler for the PPO algorithm"""
         if self.algo.lower() != "ppo": 
-            raise ValueError("Epsilon-scheduling currently only supported for the PPO algorithm.")
-        # overwrites the clip range attribute within self.model
-        self.model.clip_range = create_epsilon_scheduler(kind=kind, **kwargs)
+            Warning("Epsilon-scheduling currently only supported for the PPO algorithm. This call will be ignored.")
+        else:
+            # overwrites the clip range attribute within self.model
+            self.model.clip_range = create_epsilon_scheduler(kind=kind, **kwargs)
     
     @staticmethod
     def load_full_state():
