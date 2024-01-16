@@ -7,3 +7,5 @@ sb3-contrib >= 2.2.1
 rich >= 13.7.0
 tqdm >= 4.66.1
 SciPy >= 1.11.4
+pygame >= 2.5.2
+wandb >= 0.16.1
