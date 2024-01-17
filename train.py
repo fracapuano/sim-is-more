@@ -19,17 +19,41 @@ from custom_env import (
     envs_dict, 
     build_vec_env
 )
+from typing import Callable
 from policy.policy import Policy
 from wandb.integration.sb3 import WandbCallback
 from stable_baselines3.common.callbacks import (
     CallbackList, 
     EveryNTimesteps
 )
+# ignoring Gymnasium getattr warnings
+warnings.filterwarnings('ignore', message='.*get variables from other wrappers', )  
 
-def boolean_string(s):
+
+def boolean_string(s)->bool:
     if s.lower() not in {'false', 'true'}:
         raise ValueError('Not a valid boolean string')
     return s.lower() == 'true'
+
+def float_range(min:float, max:float)->Callable:
+    """Return function handle of an argument type function for 
+       ArgumentParser checking a float range: mini <= arg <= maxi
+         mini - minimum acceptable argument
+         maxi - maximum acceptable argument"""
+
+    # Define the function with default arguments
+    def float_range_checker(arg):
+        """New Type function for argparse - a float within predefined range."""
+        try:
+            f = float(arg)
+        except ValueError:  
+            raise argparse.ArgumentTypeError("must be a floating point number")
+        if f < min or f > max:
+            raise argparse.ArgumentTypeError("must be in the closed interval [" + str(min) + "..." + str(max)+"]")
+        return f
+
+    # Return function handle to checking function
+    return float_range_checker
 
 def parse_args()->object: 
     """Args function. 
@@ -45,15 +69,17 @@ def parse_args()->object:
                         choices=["edgegpu", "raspi4", "pixel3", "eyeriss", "fpga"], type=str, help="Target device to be used.")
     parser.add_argument("--task-weigth", default=0.5, type=float, help="Task-associated weight in the reward function. This directly balances the hardware performance.")
     parser.add_argument("--hardware-weigth", default=0.5, type=float, help="Hardware-associated weight in the reward function. This directly balances the hardware performance.")
-    parser.add_argument("--score-list", nargs="*", type=str, default=["naswot_score", "logsynflow_score", "skip_score"])
-    parser.add_argument("--normalization-type", default="std", type=str, choices=["std", "minmax"], help="Normalization type to be used for hardware cost. One in ['std', 'minmax']")
     
     """The following args help define the training procedure."""
     parser.add_argument("--algorithm", default="PPO", type=str, 
                         choices=["ppo", "trpo", "a2c"], help="RL Algorithm. One in ['ppo', 'trpo', 'a2c']")
+    parser.add_argument("--score-list", nargs="*", type=str, default=["naswot_score", "logsynflow_score", "skip_score"])
+    parser.add_argument("--normalization-type", default="std", type=str, choices=["std", "minmax"], help="Normalization type to be used for hardware cost. One in ['std', 'minmax']")
     parser.add_argument("--env_name", default="oscar", type=str,
                         choices=list(envs_dict.keys()), help=f"Environment to be used. One in {list(envs_dict.keys())}")
     parser.add_argument("--verbose", default=0, type=int, help="Verbosity value")
+    parser.add_argument("--leave-out-devices", nargs="*", default=[], type=str, help="Target device not to be used to fit Marcella/+.") 
+    parser.add_argument("--change-device-every", default=1, type=float_range(1, 100), help="Percentage of training timesteps after which to change the target device to be used.")
     parser.add_argument("--train-timesteps", default=1e5, type=float, help="Number of timesteps to train the RL algorithm with")
     parser.add_argument("--evaluate-every", default=1e4, type = float, help="Frequency with which to evaluate policy during training.")
     parser.add_argument("--history-len", default=5, type=int, help="Number of previous states to be used in history-based policy")
@@ -131,15 +157,19 @@ def main():
         normalization_type=args.normalization_type
     )
 
-    # wrapping env in a history wrapper when needed
-    if env.name == "marcella-plus":
-        env = TransitionsHistoryWrapper(env=env, history_len=args.history_len)
+    history_wrap = lambda e: TransitionsHistoryWrapper(env=e, history_len=args.history_len)
+    wrappers_list = [history_wrap] if env.name == "marcella-plus" else None
+    
+    if "marcella" in env.name:
+        # leaving some devices from the list of devices to be used while training
+        env.devices = list(set(searchspace_interface.get_devices()) - set(args.leave_out_devices))
     
     # build the envs according to spec
     envs = build_vec_env(
-        env_=env,
+        env=env,
         n_envs=args.n_envs, 
-        subprocess=args.parallel_envs)
+        subprocess=args.parallel_envs, 
+        wrappers_list=wrappers_list)
     
     # training config dictionary
     training_config = dict(
@@ -192,7 +222,10 @@ def main():
     if env.name == "marcella":
         changedevice_callback = ChangeDevice_Callback()
         # every 1 percent of the training procedure this procedure will change the underlying target device
-        marcella_callback = EveryNTimesteps(n_steps=int(args.train_timesteps/100), callback=changedevice_callback)
+        marcella_callback = EveryNTimesteps(
+            n_steps=int(args.change_device_every * args.train_timesteps / 100),
+            callback=changedevice_callback
+        )
         callback_list.append(marcella_callback)
 
     # instantiate a policy object
@@ -214,8 +247,7 @@ def main():
         # also adding wandb callback to the picture here
         callback_list.append(
             WandbCallback(
-                gradient_save_freq=100 if args.debug else 0,  # to evaluate how training proceeds when debugging
-                model_save_path=f"models/{run.id}"
+                gradient_save_freq=1000 if args.debug else 0,  # to evaluate how training proceeds when debugging
                 )
             )
         
@@ -224,26 +256,23 @@ def main():
     
     # creating one callback list only
     training_callbacks = CallbackList(callback_list)
-    # training policy using multiple callbacks - suppressing warnings during training
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        avg_return, std_return, *_ = policy.train(
-            timesteps=args.train_timesteps,
-            n_eval_episodes=args.test_episodes,
-            callback_list=training_callbacks,
-            return_best_model=True, 
-            best_model_save_path=best_model_path
-        )
+    # training policy using multiple callbacks
+    avg_return, std_return, *_ = policy.train(
+        timesteps=args.train_timesteps,
+        n_eval_episodes=args.test_episodes,
+        callback_list=training_callbacks,
+        return_best_model=True, 
+        best_model_save_path=best_model_path
+    )
     # print the number of times a better env is found
     if args.verbose > 0: 
-        msg = f"""
-            During training, the best model has been updated: {evaluation_callback.callback.bests_found} \
-            times (out of {int(args.train_timesteps//args.evaluate_every)} evaluations)
-        """
+        msg = \
+            f"""During training, the best model has been updated: {evaluation_callback.callback.bests_found} """ +\
+            f"""times (out of {int(args.train_timesteps//args.evaluate_every)} evaluations)"""
         print(msg)
         
-        print(f"\tTraining completed! Training output available at: {best_model_path}.zip")
-        print(f"\tAvg Return over latest test episodes: {round(avg_return, 2)} ± {round(std_return, 2)}")
+        print(f"\tTraining completed! Training output available at: {best_model_path}")
+        print(f"\tAverage Return over latest test episodes: {round(avg_return, 2)} ± {round(std_return, 2)}")
 
     # end wandb
     run.finish(quiet=True)

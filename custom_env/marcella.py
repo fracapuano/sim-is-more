@@ -61,7 +61,7 @@ class MarcellaEnv(OscarEnv):
         """
         if not self.device_freeze:
             self.target_device = self.next_device
-            self.max_latency = self.get_max_latency(self, percentile=self.cutoff_percentile)
+            self.max_latency = self.get_max_latency(percentile=self.cutoff_percentile)
             # entered the loop because device freeze was False, switch sets it to True
             self.device_freeze = True
 

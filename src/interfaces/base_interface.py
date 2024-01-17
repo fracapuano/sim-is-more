@@ -73,6 +73,11 @@ class Base_Interface(ABC):
     def set_all_ops(self, ops_list:List[Text]):
         self._data["operations"] = ops_list
     
+    def get_devices(self)->List[Text]:
+        """Returns the list of devices used for multitasking."""
+        return self._data["devices"]
+
+    
     def list_to_index(self, architecture_list:List[Text])->int:
         """This function maps a given architecture list to the corresponding unique index.
         

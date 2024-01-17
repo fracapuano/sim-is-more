@@ -4,7 +4,6 @@ from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 from stable_baselines3.common.evaluation import evaluate_policy
 import wandb
 import numpy as np
-import warnings  # suppressing the warnings from gymnasium due to stable_baselines3
 from typing import Text, List
 
 class ScoresEvolutionTracker:
@@ -80,9 +79,7 @@ class PeriodicEvalCallback(BaseCallback):
         super().__init__(verbose)
 
         """Suppressing this warning as it is raised by stable_baselines3 `env_method` function."""
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            self.episode_duration = env.env_method("get_max_timesteps")[0]
+        self.episode_duration = env.env_method("get_max_timesteps")[0]
 
         self._envs = env
         self.number_of_envs = self._envs.num_envs
