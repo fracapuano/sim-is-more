@@ -119,11 +119,13 @@ def draw_hbars(ax:plt.Axes, labels:List[Text], widths:NDArray, **kwargs)->plt.Ax
     Returns:
         plt.Axes: The modified axes with the bar chart.
     """
-    ax.barh(
+    bars = ax.barh(
         labels,
         widths,
         **kwargs
     )
-
+    
+    ax.bar_label(bars, fmt="%.2f")  # Annotate the bars with their height
+    
     return ax
 

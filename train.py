@@ -206,7 +206,12 @@ def main():
     if not os.path.exists(best_model_path):
         os.makedirs(best_model_path)
     with open(f"{best_model_path}/training_config.json", "w+") as f:
-        json.dump(vars(args), f, indent=4)
+        args_dict = vars(args)
+        if "marcella" in args.env_name:
+            args_dict["devices"] = env.devices
+            args_dict["target-device"] = None
+        
+        json.dump(args_dict, f, indent=4)
 
     # this callback is wrapped in `EveryNTimesteps`
     inner_callback = PeriodicEvalCallback(

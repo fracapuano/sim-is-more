@@ -336,42 +336,63 @@ class OscarEnv(NASEnv):
         
         # normalizing the scores using mean and std
         self.normalized_hardware_costs = (self.hardware_costs - self.hw_score_mean) / self.hw_score_std
+    
+    def _set_test_accuracies(self):
+        """
+        Sets the test accuracy of all the networks within the network pool considered.
+        """
+        self.test_accuracies = np.fromiter(
+            map(lambda a: self.searchspace.architecture_to_accuracy(a), self.networks_pool), 
+            dtype="float"
+        )
 
-    def unpack_buffer(self)->Tuple[NDArray, NDArray]:
+    def unpack_buffer(self, x_getter:str="current_net_latency", y_getter:str="training_free_score")->Tuple[NDArray, NDArray]:
         """
         Unpack the observations buffer into x and y coordinates.
+
+        Args:
+            x_getter (str, optional): The name of the attribute to use as x coordinate. Defaults to "current_net_latency".
+            y_getter (str, optional): The name of the attribute to use as y coordinate. Defaults to "training_free_score".
 
         Returns:
             Tuple[NDArray, NDArray]: The x and y coordinates.
         """
         x_coordinates = np.fromiter(
-            map(lambda x: x["current_net_latency"], self.observations_buffer),
+            map(lambda info: info[x_getter], self.observations_buffer),
             dtype="float"
         )
         y_coordinates = np.fromiter(
-            map(lambda x: x["training_free_score"], self.observations_buffer),
+            map(lambda info: info[y_getter], self.observations_buffer),
             dtype="float"
         )
 
         return x_coordinates, y_coordinates
 
-    def _render_frame(self, mode:Text="human", draw_background:bool=True)->Optional[NDArray]: 
+    def _render_frame(self, 
+                      mode:Text="human", 
+                      draw_background:bool=True,
+                      use_accuracy:bool=False)->Optional[NDArray]: 
         """
         Renders a frame of the environment.
 
         Args:
             mode (Text, optional): The rendering mode. Defaults to "human".
             draw_background (bool, optional): Whether to draw the background scatter plot. Defaults to True.
+            use_accuracy (bool, optional): Whether to use the test accuracy as y coordinate. Defaults to False.
 
         Returns:
             Optional[NDArray]: The rendered frame as an RGB array if mode is "rgb_array", None otherwise.
         """ 
         screen_size = (640*2, 480*2)
 
-        # populating the combined scores and hardware costs attributes if not already done
-        if not hasattr(self, "combined_scores") and draw_background:
-            self._set_combined_scores()
-
+        if not use_accuracy:
+            # populating the combined scores and hardware costs attributes if not already done
+            if not hasattr(self, "combined_scores") and draw_background:
+                self._set_combined_scores()
+        else:
+            if not hasattr(self, "test_accuracies") and draw_background:
+                self._set_test_accuracies()
+        
         # Initialize Pygame window and clock if not already done
         if not hasattr(self, "window"):
             pygame.init()
@@ -387,14 +408,19 @@ class OscarEnv(NASEnv):
                 pygame.quit()
         
         fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, gridspec_kw={"height_ratios": [8,1,1]}, dpi=400, layout="constrained")
+        
+        y_getter = "test_accuracy" if use_accuracy else "training_free_score"
+        y_label = f"Test Accuracy, {self.searchspace.dataset}" if use_accuracy else "Combined Training-Free Score"
+        performance_measures = self.test_accuracies if use_accuracy else self.combined_scores
+
         if draw_background:
-            ax1 = create_background_scatter(ax1, self.hardware_costs, self.combined_scores)
+            ax1 = create_background_scatter(ax1, self.hardware_costs, performance_measures)
         
         # drawing the latency cutoff
         ax1 = create_background_vlines(ax1, self.max_latency, label="Latency Cutoff")
         # drawing the architectures
-        ax1 = draw_architectures_on_background(ax1, *self.unpack_buffer(), label="Current Network")
-        ax1.set_xlabel("Latency (ms)"); ax1.set_ylabel("Combined Training-Free Score")
+        ax1 = draw_architectures_on_background(ax1, *self.unpack_buffer(y_getter=y_getter), label="Current Network")
+        ax1.set_xlabel("Latency (ms)"); ax1.set_ylabel(y_label)
         
         # drawing test accuracy and latency percentile bars
         info_dict = self._get_info()
@@ -436,6 +462,9 @@ class OscarEnv(NASEnv):
         """Calls the render frame method."""
         # Storing information associated with current observation in the buffer
         self.observations_buffer.append(self._get_info())
-        
-        return self._render_frame(mode=mode, draw_background=draw_background)
+        return self._render_frame(
+            mode=mode, 
+            draw_background=draw_background, 
+            use_accuracy=getattr(self, "rendering_test_mode", False)
+        )
 
