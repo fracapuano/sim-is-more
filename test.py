@@ -58,12 +58,13 @@ def main():
     algorithm, env_name = configuration["algorithm"], configuration["env_name"]
 
     searchspace_interface = create_searchspace(searchspace=configuration["searchspace"], dataset=configuration["dataset"])
+    
     # create env (gym.Env)
     env = envs_dict[env_name.lower()](
         searchspace_api=searchspace_interface,
         scores=configuration["score_list"],
         target_device=args.target_device if args.use_custom_device else configuration["target_device"],
-        weights=[configuration["task_weigth"], configuration["hardware_weigth"]] 
+        weights=[configuration["task_weight"], configuration["hardware_weight"]] 
         )
     
     if env_name == "marcella-plus":
@@ -73,7 +74,7 @@ def main():
                 searchspace_api=searchspace_interface,
                 scores=configuration["score_list"],
                 target_device=args.target_device,
-                weights=[configuration["task_weigth"], configuration["hardware_weigth"]]
+                weights=[configuration["task_weight"], configuration["hardware_weight"]]
             )
         
         env = TransitionsHistoryWrapper(env=env, history_len=configuration["history_len"])
