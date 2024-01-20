@@ -431,7 +431,7 @@ class OscarEnv(NASEnv):
         # drawing the latency cutoff
         ax1 = create_background_vlines(ax1, self.max_latency, label="Latency Cutoff")
         # drawing the architectures
-        ax1 = draw_architectures_on_background(ax1, *self.unpack_buffer(y_getter=y_getter), label="Current Network")
+        ax1 = draw_architectures_on_background(ax1, *self.unpack_buffer(y_getter=y_getter), label="Current Network", zorder=2)
         ax1.set_xlabel("Latency (ms)"); ax1.set_ylabel(y_label)
         
         # drawing test accuracy and latency percentile bars
