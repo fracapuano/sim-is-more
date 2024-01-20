@@ -5,7 +5,8 @@ from .render import (
     create_background_vlines,
     draw_architectures_on_background,
     draw_hbars,
-    figure_to_image
+    figure_to_image,
+    is_pareto_efficient
 )
 import numpy as np
 from itertools import chain
@@ -416,6 +417,17 @@ class OscarEnv(NASEnv):
         if draw_background:
             ax1 = create_background_scatter(ax1, self.hardware_costs, performance_measures)
         
+        architectures_and_costs = np.hstack((self.hardware_costs.reshape(-1,1), -1 * performance_measures.reshape(-1,1)))
+        # computing the Pareto front
+        pareto_front = architectures_and_costs[is_pareto_efficient(architectures_and_costs)]
+        # sorting by increasing values of latency
+        pareto_front = pareto_front[pareto_front[:, 0].argsort()]
+        
+        # drawing the Pareto front
+        ax1.plot(
+            pareto_front[:,0], -1 * pareto_front[:,1], zorder=1, lw=1, ls="--", color="tab:orange", label="Pareto Front"
+        )
+
         # drawing the latency cutoff
         ax1 = create_background_vlines(ax1, self.max_latency, label="Latency Cutoff")
         # drawing the architectures

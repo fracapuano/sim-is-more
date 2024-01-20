@@ -9,6 +9,36 @@ from PIL import Image
 import matplotlib.pyplot as plt
 from numpy.typing import NDArray
 
+def is_pareto_efficient(costs:NDArray, return_mask:bool=True)->NDArray:
+    """
+    Find the pareto-efficient points.
+
+    Args:
+        costs (ndarray): An (n_points, n_costs) array.
+        return_mask (bool, optional): True to return a mask. 
+            Defaults to True.
+
+    Returns:
+        NDArray: An array of indices of pareto-efficient points.
+            If return_mask is True, this will be an (n_points, ) boolean array.
+            Otherwise it will be a (n_efficient_points, ) integer array of indices.
+    """
+    is_efficient = np.arange(costs.shape[0])
+    n_points = costs.shape[0]
+    next_point_index = 0  # Next index in the is_efficient array to search for
+    while next_point_index<len(costs):
+        nondominated_point_mask = np.any(costs<costs[next_point_index], axis=1)
+        nondominated_point_mask[next_point_index] = True
+        is_efficient = is_efficient[nondominated_point_mask]  # Remove dominated points
+        costs = costs[nondominated_point_mask]
+        next_point_index = np.sum(nondominated_point_mask[:next_point_index])+1
+    if return_mask:
+        is_efficient_mask = np.zeros(n_points, dtype = bool)
+        is_efficient_mask[is_efficient] = True
+        return is_efficient_mask
+    else:
+        return is_efficient
+
 def figure_to_image(fig:plt.figure, screen_width:int, screen_height:int)->pygame.Surface:
     """
     Converts a matplotlib figure to a pygame Surface object.
@@ -53,7 +83,7 @@ def create_background_scatter(ax:plt.Axes, x_coordinates:NDArray, y_coordinates:
     ax.scatter(
         x_coordinates,
         y_coordinates,
-        s=10,
+        s=5,
         c="0.8", # light gray
         zorder=0
     )
