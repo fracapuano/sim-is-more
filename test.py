@@ -67,8 +67,20 @@ def main():
         )
     
     if env_name == "marcella-plus":
+        # Oscar is the only env supporting a specific target device at test time
+        if args.use_custom_device:
+            env = envs_dict["oscar"](
+                searchspace_api=searchspace_interface,
+                scores=configuration["score_list"],
+                target_device=args.target_device,
+                weights=[configuration["task_weigth"], configuration["hardware_weigth"]]
+            )
+        
         env = TransitionsHistoryWrapper(env=env, history_len=configuration["history_len"])
 
+    if args.render:
+        env.unwrapped.rendering_test_mode = True
+    
     model_name = \
         f"{args.folder_path}/{algorithm.upper()}_{env_name}_{to_scientific_notation(configuration['train_timesteps'])}.zip"
 
