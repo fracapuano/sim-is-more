@@ -1,4 +1,3 @@
-import random
 import numpy as np
 import gymnasium as gym
 from itertools import chain
@@ -31,7 +30,7 @@ class NASEnv(gym.Env):
         # this variable defines the maximum number of timesteps per episode
         self.max_timesteps = max_timesteps
         # this variable defines the type of normalization to be applied to the scores
-        self.normalization_type = normalization_type if normalization_type is not None else "std"
+        self.normalization_type = normalization_type if normalization_type is not None else "minmax"
 
         """
         Each individual network can be univoquely identified with `m` (`m = m(searchspace)`) characters. 
@@ -307,7 +306,7 @@ class NASEnv(gym.Env):
         """
         self.n_samples = n_samples if n_samples is not None else len(self.searchspace)
         # initializes the network pool with n_samples random choices from the searchspace
-        self.networks_pool = list(random.choices(self.searchspace, k=self.n_samples))
+        self.networks_pool = list(np.random.choice(self.searchspace, size=self.n_samples, replace=False))
 
     def get_max_timesteps(self)->int:
         return self.max_timesteps
