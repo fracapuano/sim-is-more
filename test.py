@@ -74,7 +74,8 @@ def main():
                 searchspace_api=searchspace_interface,
                 scores=configuration["score_list"],
                 target_device=args.target_device,
-                weights=[configuration["task_weight"], configuration["hardware_weight"]]
+                weights=[configuration["task_weight"], configuration["hardware_weight"]],
+                cutoff_percentile=100
             )
         
         env = TransitionsHistoryWrapper(env=env, history_len=configuration["history_len"])
