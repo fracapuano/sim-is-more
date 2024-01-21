@@ -74,7 +74,7 @@ def parse_args()->object:
     parser.add_argument("--algorithm", default="PPO", type=str, 
                         choices=["ppo", "trpo", "a2c"], help="RL Algorithm. One in ['ppo', 'trpo', 'a2c']")
     parser.add_argument("--score-list", nargs="*", type=str, default=["naswot_score", "logsynflow_score", "skip_score"])
-    parser.add_argument("--normalization-type", default="std", type=str, choices=["std", "minmax"], help="Normalization type to be used for hardware cost. One in ['std', 'minmax']")
+    parser.add_argument("--normalization-type", default="minmax", type=str, choices=["std", "minmax"], help="Normalization type to be used for hardware cost. One in ['std', 'minmax']")
     parser.add_argument("--env_name", default="oscar", type=str,
                         choices=list(envs_dict.keys()), help=f"Environment to be used. One in {list(envs_dict.keys())}")
     parser.add_argument("--verbose", default=0, type=int, help="Verbosity value")
