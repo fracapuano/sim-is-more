@@ -167,3 +167,5 @@ wandb/
 
 runs/
 models/
+
+*.ipynb
