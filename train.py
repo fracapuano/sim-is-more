@@ -67,8 +67,8 @@ def parse_args()->object:
                         choices=["nats"], help=f"Searchspace to be used. One in ['nats']")  # fbnet will follow
     parser.add_argument("--target-device", default="edgegpu", 
                         choices=["edgegpu", "raspi4", "pixel3", "eyeriss", "fpga"], type=str, help="Target device to be used.")
-    parser.add_argument("--task-weigth", default=0.5, type=float, help="Task-associated weight in the reward function. This directly balances the hardware performance.")
-    parser.add_argument("--hardware-weigth", default=0.5, type=float, help="Hardware-associated weight in the reward function. This directly balances the hardware performance.")
+    parser.add_argument("--task-weight", default=0.5, type=float, help="Task-associated weight in the reward function. This directly balances the hardware performance.")
+    parser.add_argument("--hardware-weight", default=0.5, type=float, help="Hardware-associated weight in the reward function. This directly balances the hardware performance.")
     
     """The following args help define the training procedure."""
     parser.add_argument("--algorithm", default="PPO", type=str, 
@@ -153,7 +153,7 @@ def main():
         searchspace_api=searchspace_interface, 
         scores=args.score_list,
         target_device=args.target_device,
-        weights=[args.task_weigth, args.hardware_weigth],
+        weights=[args.task_weight, args.hardware_weight],
         normalization_type=args.normalization_type
     )
 
@@ -179,8 +179,8 @@ def main():
         train_timesteps=to_scientific_notation(args.train_timesteps),
         random_seed=args.seed,
         target_device=args.target_device,
-        task_weigth=args.task_weigth,
-        hardware_weigth=args.hardware_weigth,
+        task_weight=args.task_weight,
+        hardware_weight=args.hardware_weight,
         score_list=args.score_list,
         learning_rate=args.learning_rate,
         epsilon_scheduling=args.epsilon_scheduling,
