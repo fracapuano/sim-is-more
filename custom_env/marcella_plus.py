@@ -1,4 +1,3 @@
-from custom_env.utils import NASIndividual
 from src import Base_Interface
 from .oscar import OscarEnv
 from typing import (
@@ -6,18 +5,14 @@ from typing import (
     Text, 
     Optional, 
     Dict, 
-    Tuple, 
     List
 )
 from numpy.typing import NDArray
 from .utils import (
     ProbabilityDistribution, 
-    NASIndividual,
     TruncatedNormalDistribution
 )
 import numpy as np
-import random
-from scipy.stats import percentileofscore
 from operator import itemgetter
 
 
@@ -69,6 +64,25 @@ class MarcellaPlusEnv(OscarEnv):
     def name(self): 
         return "marcella-plus"
     
+    def normalize_score(self, score_value:float, score_name:Text, type:Text="std")->float:
+        """
+        Normalize the given score value based on the score name and type.
+        This is needed because unlike OscarEnv (MarcellaEnv) we cannot read indicators like
+        mean, std, min or max from a lookup table as they change from reset to reset.
+
+        Args:
+            score_value (float): The score value to be normalized.
+            score_name (Text): The name of the score.
+            type (Text, optional): The type of normalization to be applied. Defaults to "std".
+
+        Returns:
+            float: The normalized score value.
+        """
+        if "latency" in score_name:
+            return self.normalize_hardware_cost(hardware_cost=score_value, type=type)
+        else:
+            return super().normalize_score(score_value, score_name, type)
+
     def normalize_hardware_cost(self, hardware_cost:float, type:Text="std")->float:
         """
         Applies some transformation to the hardware cost.
@@ -82,11 +96,15 @@ class MarcellaPlusEnv(OscarEnv):
         if type == "std":
             return (hardware_cost - self.mean_hardware_cost) / self.std_hardware_cost
 
+        elif type == "minmax":
+            return (hardware_cost - self.min_hardware_cost) / (self.max_hardware_cost - self.min_hardware_cost)
+
         else:
             msg = \
             f"""
             Normalization type {type} not implemented. Currently supported types are:
             - std: Z-normalization
+            - minmax: Min-Max normalization
             """
             raise NotImplementedError(msg)
 
@@ -105,62 +123,7 @@ class MarcellaPlusEnv(OscarEnv):
         
         return sum(itemgetter(*get_architecture_ops(architecture_list))(self.blocks_latency))
 
-    def _set_hardware_costs(self):
-        """
-        Sets the hardware costs based on the latency of the networks within the network pool on the target device.
-        """
-        self.hardware_costs = np.fromiter(
-            map(lambda a: self.compute_hardware_cost(self.searchspace.architecture_to_list(a)), self.networks_pool), 
-            dtype="float"
-        )
-
-        # extracting the mean and std of the scores
-        self.hw_score_mean, self.hw_score_std = self.hardware_costs.mean(), self.hardware_costs.std()
-        
-        # normalizing the scores using mean and std
-        self.normalized_hardware_costs = (self.hardware_costs - self.hw_score_mean) / self.hw_score_std
-
-    def fitness_function(self, individual:NASIndividual)->NASIndividual: 
-        """
-        Directly overwrites the fitness attribute for a given individual.
-
-        Args: 
-            individual (NASIndividual): Individual to score.
-
-        Returns:
-            NASIndividual: Individual, with fitness field.
-        """
-        scores = np.array([
-            self.normalize_score(
-                score_value=self.searchspace.list_to_score(input_list=individual.architecture, 
-                                                            score=score), 
-                score_name=score
-            )
-            for score in self.score_names
-        ])
-        # computing hardware performance of current individual
-        hardware_performance = np.array([
-            self.normalize_hardware_cost(
-                self.compute_hardware_cost(architecture_list=individual.architecture)
-            )
-        ])
-
-        # individual fitness is a convex combination of multiple scores
-        network_score = (np.ones_like(scores) / len(scores)) @ scores
-        network_hardware_performance = \
-            (np.ones_like(hardware_performance) / len(hardware_performance)) @ hardware_performance
-        
-        # saving the different scores per each individual
-        individual._scores = \
-            {s_name: s for s_name, s in zip(self.score_names, scores)} | \
-            {p_name: p for p_name, p in zip(["normalized-latency"], hardware_performance)}
-
-        # in the hardware aware contest performance is in a direct tradeoff with hardware performance
-        individual._fitness = np.array([network_score, -network_hardware_performance]) @ self.weights
-        
-        return individual
-    
-    def _sample_blocks_latencies(self) -> None:
+    def _sample_blocks_latencies(self)->None:
         """
         Samples a new set of latencies for each block.
 
@@ -175,6 +138,18 @@ class MarcellaPlusEnv(OscarEnv):
             op: self.blocks_distribution[op].sample().item() for op in self.searchspace.all_ops
         }
 
+    def _set_normalization_params(self):
+        """
+        Sets the normalization parameters for the hardware costs.
+        """
+        if self.normalization_type == "std":
+            self.mean_hardware_cost = self.hardware_costs.mean().item()
+            self.std_hardware_cost = self.hardware_costs.std().item()
+
+        elif self.normalization_type == "minmax":
+            self.min_hardware_cost = self.hardware_costs.min().item()
+            self.max_hardware_cost = self.hardware_costs.max().item()
+
     def reset(self, seed:Optional[int]=None)->NDArray:
         """Resets custom env attributes."""
         # sampling a new starting observation
@@ -184,13 +159,10 @@ class MarcellaPlusEnv(OscarEnv):
         self._sample_blocks_latencies()
         # computing hardware cost samples
         self._set_hardware_costs()
+        self._set_normalization_params()
         
-        # FIXME: possibly storing the blocks' latencies in the observation
+        # possibly storing the blocks' latencies in the observation
         # self._observation["blocks_latency"] = self.blocks_latency
-                
-        # storing mean and std of hardware cost in the observation
-        self.mean_hardware_cost = np.mean(self.hardware_costs)
-        self.std_hardware_cost = np.std(self.hardware_costs)
         
         # setting the latency cutoff to the cutoff percentile-th of the hardware measures
         self.max_latency = np.percentile(self.hardware_costs, self.cutoff_percentile)
@@ -201,10 +173,4 @@ class MarcellaPlusEnv(OscarEnv):
         self.observations_buffer.clear()
 
         return self._get_obs(), self._get_info()
-    
-    def is_terminated(self)->bool:
-        """
-        Checks whether or not the episode is terminated.
-        MarcellaPlusEnv is terminated when the latency of the current network is higher than the latency cutoff.
-        """
-        return bool(self.compute_hardware_cost(self.current_net.architecture) > self.max_latency)
+
