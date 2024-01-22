@@ -1,4 +1,3 @@
-import random
 import pygame
 from .render import (
     create_background_scatter,
