@@ -135,7 +135,7 @@ class OscarEnv(NASEnv):
             NASIndividual: Individual, with fitness field.
         """
         if individual.fitness is None:  # None at initialization only
-            scores = np.array([
+            tf_scores = np.array([
                 self.normalize_score(
                     score_value=self.searchspace.list_to_score(input_list=individual.architecture, score=score), 
                     score_name=score,
@@ -143,25 +143,27 @@ class OscarEnv(NASEnv):
                 )
                 for score in self.score_names
             ])
-            hardware_performance = np.array([
+            hardware_cost = np.array([
                 self.normalize_score(
-                    score_value=self.searchspace.list_to_score(input_list=individual.architecture, score=f"{self.target_device}_{metric}"),
+                    score_value=self.compute_hardware_cost(architecture_list=individual.architecture),
                     score_name=f"{self.target_device}_{metric}",
                     type=self.normalization_type
                 )
                 for metric in ["latency"]  # change here to add more hardware aware metrics
             ])
             # individual fitness is a linear combination of multiple scores
-            network_score = (np.ones_like(scores) / len(scores)) @ scores
-            network_hardware_performance =  (np.ones_like(hardware_performance) / len(hardware_performance)) @ hardware_performance
+            network_tf_score = (np.ones_like(tf_scores) / len(tf_scores)) @ tf_scores
+            network_hw_score =  1 - ((np.ones_like(hardware_cost) / len(hardware_cost)) @ hardware_cost)
             
             # saving the scores within each individual
             individual._scores = \
-                {s_name: s for s_name, s in zip(self.score_names, scores)} | \
-                {p_name: p for p_name, p in zip(["normalized-latency"], hardware_performance)}
+                {s_name: s for s_name, s in zip(self.score_names, tf_scores)} | \
+                {p_name: p for p_name, p in zip(["normalized-latency"], hardware_cost)} | \
+                {"network_tf_score": network_tf_score, 
+                 "network_hardware_performance": network_hw_score}
 
             # in the hardware aware contest performance is in a direct tradeoff with hardware performance
-            individual._fitness = np.array([network_score, -network_hardware_performance]) @ self.weights
+            individual._fitness = np.array([network_tf_score, network_hw_score]) @ self.weights
         
         return individual
 
@@ -209,8 +211,10 @@ class OscarEnv(NASEnv):
         """
         Returns `True` if the episode is terminated and `False` otherwise.
         Episodes are terminated when an agent produces an architecture with a latency value greater than the cutoff.
+
+        May be setted to always return False when no termination condition is needed.
         """
-        return self._observation["latency_value"].item() >= self.max_latency
+        return False
 
     def get_reward(self, new_individual:NASIndividual)->float:
         """
@@ -328,7 +332,7 @@ class OscarEnv(NASEnv):
         Sets the hardware costs based on the latency of the networks within the network pool on the target device.
         """
         self.hardware_costs = np.fromiter(
-            map(lambda a: self.searchspace.architecture_to_score(a, score=f"{self.target_device}_latency"), self.networks_pool), 
+            map(lambda a: self.compute_hardware_cost(self.searchspace.architecture_to_list(a)), self.networks_pool), 
             dtype="float"
         )
 
