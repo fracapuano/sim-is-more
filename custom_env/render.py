@@ -68,7 +68,7 @@ def figure_to_image(fig:plt.figure, screen_width:int, screen_height:int)->pygame
 
     return scaled_surface
 
-def create_background_scatter(ax:plt.Axes, x_coordinates:NDArray, y_coordinates:NDArray)->plt.Axes:
+def create_background_scatter(ax:plt.Axes, x_coordinates:NDArray, y_coordinates:NDArray, c:Optional[NDArray]=None)->plt.Axes:
     """
     Create a scatter plot of background points on the given axes.
 
@@ -76,6 +76,7 @@ def create_background_scatter(ax:plt.Axes, x_coordinates:NDArray, y_coordinates:
         ax (plt.Axes): The axes on which to create the scatter plot.
         x_coordinates (NDArray): The x-coordinates of the points.
         y_coordinates (NDArray): The y-coordinates of the points.
+        c (Optional[NDArray], optional): The color of the points. Defaults to None.
 
     Returns:
         plt.Axes: The modified axes with the scatter plot.
@@ -84,7 +85,7 @@ def create_background_scatter(ax:plt.Axes, x_coordinates:NDArray, y_coordinates:
         x_coordinates,
         y_coordinates,
         s=5,
-        c="0.8", # light gray
+        c=c, # light gray
         zorder=0
     )
 
