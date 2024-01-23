@@ -10,7 +10,8 @@ from typing import (
 from numpy.typing import NDArray
 from .utils import (
     ProbabilityDistribution, 
-    TruncatedNormalDistribution
+    TruncatedNormalDistribution,
+    shuffle_dict_values
 )
 import numpy as np
 from operator import itemgetter
@@ -154,9 +155,13 @@ class MarcellaPlusEnv(OscarEnv):
         """Resets custom env attributes."""
         # sampling a new starting observation
         self._observation = self.observation_space.sample()
-        
+
+        # shuffling the operations latency distributions at each reset
+        self.blocks_distribution = shuffle_dict_values(self.blocks_distribution)
+
         # sampling a new distribution of blocks' latencies
         self._sample_blocks_latencies()
+        
         # computing hardware cost samples
         self._set_hardware_costs()
         self._set_normalization_params()
