@@ -32,6 +32,9 @@ def main():
     searchspace_interface = NATS_Interface(dataset=args.dataset)
     env = envs_dict[args.env.lower()](searchspace_api=searchspace_interface)
 
+    if args.render:
+        env.render_mode = "human"
+
     if env.name == "marcella-plus":
         env = TransitionsHistoryWrapper(env=env, history_len=5)
     
