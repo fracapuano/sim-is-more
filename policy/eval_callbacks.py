@@ -108,6 +108,13 @@ class PeriodicEvalCallback(BaseCallback):
         """
         # flush past statistics
         self.episodes_tracker.reset_stats()
+
+        # logging the reference net latency, for comparison across different hardware platforms
+        reference_net = self.model.get_env().env_method("get_reference_architecture", architecture_list=True)[0]
+        wandb.log({
+            "Reference Net Latency": self.model.get_env().env_method("compute_hardware_cost", reference_net)[0],
+        })
+
         # obtain mean and std of cumulative reward over n_eval_episodes
         mean_cum_reward, std_cum_reward = evaluate_policy(
             self.model,
