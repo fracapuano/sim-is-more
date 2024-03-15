@@ -11,7 +11,8 @@ from numpy.typing import NDArray
 from .utils import (
     ProbabilityDistribution, 
     TruncatedNormalDistribution,
-    shuffle_dict_values
+    shuffle_dict_values,
+    UniformProbabilityDistribution
 )
 import numpy as np
 from operator import itemgetter
@@ -45,7 +46,7 @@ class MarcellaPlusEnv(OscarEnv):
             self.blocks_distribution = {
                 op: TruncatedNormalDistribution(
                     mean=device_measurements[op].mean(), 
-                    std=device_measurements[op].std()
+                    std=5*device_measurements[op].std()
                 )
                 for op in self.searchspace.all_ops
             }
@@ -157,7 +158,7 @@ class MarcellaPlusEnv(OscarEnv):
         self._observation = self.observation_space.sample()
 
         # shuffling the operations latency distributions at each reset
-        self.blocks_distribution = shuffle_dict_values(self.blocks_distribution)
+        #self.blocks_distribution = shuffle_dict_values(self.blocks_distribution)
 
         # sampling a new distribution of blocks' latencies
         self._sample_blocks_latencies()

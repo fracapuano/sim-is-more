@@ -4,12 +4,13 @@ import matplotlib.pyplot as plt
 
 # Function to calculate c(x, y)
 def c(x, y, c1):
-    return (c1)*y + (1-c1)*(1-x)
+    #return c1 * (y - np.log(1-y)) + (1-c1)*(x-np.log10(x))
+    return y * (x**c1 - 1)
 
 def colormap_background():
     # Streamlit UI
     st.title("Color Map Visualization")
-    c1 = st.slider("Select the value of c1", 0., 1., value=0.)
+    c1 = st.slider("Select the value of c1", -1., 1., value=0.)
 
     # Create a grid of x and y values
     x = np.linspace(0, 1, 50)
