@@ -82,6 +82,7 @@ def main():
 
     if args.render:
         env.unwrapped.rendering_test_mode = True
+        env.unwrapped.render_mode = "human"
     
     model_name = \
         f"{args.folder_path}/{algorithm.upper()}_{env_name}_{to_scientific_notation(configuration['train_timesteps'])}.zip"

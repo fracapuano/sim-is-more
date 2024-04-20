@@ -18,13 +18,12 @@ from operator import itemgetter
 from numpy.typing import NDArray
 from .utils import NASIndividual
 from scipy.stats import percentileofscore
-from typing import Iterable, Text, Tuple, Dict, Optional
-
+from typing import Iterable, Text, Tuple, Dict, Optional, Union
 
 class OscarEnv(NASEnv):
     metadata = {
         "render_modes": ["human", "rgb_array"],
-        "render_fps": 5, 
+        "render_fps": 15, 
     }
     """
     gym.Env for Hardware-aware RL-based NAS. 
@@ -34,7 +33,7 @@ class OscarEnv(NASEnv):
                  searchspace_api:Base_Interface,
                  scores:Iterable[Text]=["naswot_score", "logsynflow_score", "skip_score"],
                  n_mods:int=1,
-                 max_timesteps:int=20,
+                 max_timesteps:int=50,
                  cutoff_percentile:float=85.,
                  target_device:Text="edgegpu",
                  weights:Iterable[float]=[0.6, 0.4],
@@ -60,6 +59,8 @@ class OscarEnv(NASEnv):
         
         # initializing a pool of networks to be used for distributional-insights purposes
         self.init_networks_pool(n_samples=n_samples)
+        # instantiates the reference architecture (to analyze differences in hardware costs across devices)
+        self.init_reference_architecture()
         # store the hardware costs for all the networks in the pool
         self._set_hardware_costs()
         
@@ -98,10 +99,13 @@ class OscarEnv(NASEnv):
         """
         # single action = [(block_to_modify, new_block)] * n_modifications
         action_space = list(chain(*[
-            (self.searchspace.architecture_len + 1, len(self.searchspace.all_ops))
+            (self.searchspace.architecture_len, len(self.searchspace.all_ops))
             for _ in range(self.n_mods)])
         )
         self.action_space = spaces.MultiDiscrete(action_space)
+        
+        # init render mode
+        self.render_mode = "rgb_array"
 
     @property
     def name(self):
@@ -122,6 +126,19 @@ class OscarEnv(NASEnv):
             self.hardware_costs,
             percentile)
         )
+
+    def init_reference_architecture(self)->None:
+        """This method initializes the reference architecture for the environment.
+        """
+        self.reference_architecture = np.random.choice(self.networks_pool)
+    
+    def get_reference_architecture(self, architecture_list:bool=True)->Union[Text, Iterable[Text]]:
+        """This method returns the reference architecture for the environment.
+        
+        Returns:
+            Union[Text, Iterable[Text]]: The reference architecture, either as a string or in list format.
+        """
+        return self.reference_architecture if not architecture_list else self.searchspace.architecture_to_list(self.reference_architecture)
 
     def fitness_function(self, individual:NASIndividual)->NASIndividual: 
         """
@@ -159,12 +176,33 @@ class OscarEnv(NASEnv):
                 {s_name: s for s_name, s in zip(self.score_names, tf_scores)} | \
                 {p_name: p for p_name, p in zip(["normalized-latency"], hardware_cost)} | \
                 {"network_tf_score": network_tf_score, 
-                 "network_hardware_performance": network_hw_score}
+                 "network_hw_score": network_hw_score}
 
             # in the hardware aware contest performance is in a direct tradeoff with hardware performance
-            individual._fitness = np.array([network_tf_score, network_hw_score]) @ self.weights
+            individual._fitness = self.combine_scores(network_tf_score, network_hw_score).item()
         
         return individual
+    
+    def combine_scores(self, performance_scores:Union[float, NDArray], efficiency_score:Union[float, NDArray])->Union[float, NDArray]:
+        """
+        Combine the performance and efficiency scores into a single score.
+
+        Args:
+            performance_scores (Union[float, NDArray]): The performance scores.
+            efficiency_score (Union[float, NDArray]): The efficiency scores.
+
+        Returns:
+            Union[float, NDArray]: The combined scores.
+        """
+        to_array = lambda x: np.array(x) if not isinstance(x, np.ndarray) else x
+        log_squash = lambda x: x - np.log10(1e-1+1-x)
+
+        w = -0.3
+        # transform = lambda x: log_squash(to_array(x)).reshape(-1,1)
+        transform = lambda x: to_array(x).reshape(-1,1)
+        
+        # return np.hstack([transform(performance_scores), transform(efficiency_score)]) @ self.weights
+        return transform(performance_scores) * transform(1e-3 + 1-efficiency_score)**w
 
     def compute_hardware_cost(self, architecture_list:Iterable[Text])->float:
         """
@@ -213,14 +251,16 @@ class OscarEnv(NASEnv):
 
         May be setted to always return False when no termination condition is needed.
         """
-        return False
+        # return bool(self.current_net_latency > self.max_latency)
+        False
 
     def get_reward(self, new_individual:NASIndividual)->float:
         """
         Compute the reward associated to the modification operation.
         Here, the reward is the fitness of the newly generated individual
         """
-        return new_individual.fitness
+        # removing a small penalty to the reward to discourage stalling
+        return new_individual.fitness - 1
 
     def step(self, action:NDArray)->Tuple[NDArray, float, bool, dict]: 
         """Steps the episode having a given action.
@@ -274,8 +314,8 @@ class OscarEnv(NASEnv):
         # retrieve info
         info = self._get_info()
 
-        # if terminated:
-        #     reward = -1
+        if terminated:
+            reward = -1
 
         # storing the reward in a variable to be accessed by the render method
         self.step_reward = reward
@@ -315,14 +355,24 @@ class OscarEnv(NASEnv):
                     for score_name in self.score_names]).reshape(-1,1)
                 for a in self.networks_pool]
         )
-        # computing the mean and std of the scores for the network pool considered   
-        self.scores_mean, self.scores_std = np.vstack(
-            [self.training_free_scores.mean(axis=1), self.training_free_scores.std(axis=1)]
-        )
-        
-        # normalizing the scores using mean and std
-        self.normalized_training_free_scores = (self.training_free_scores - self.scores_mean.reshape(-1,1)) / self.scores_std.reshape(-1,1)
+        if self.normalization_type == "std":
+            # computing the mean and std of the scores for the network pool considered   
+            self.scores_mean, self.scores_std = np.vstack(
+                [self.training_free_scores.mean(axis=1), self.training_free_scores.std(axis=1)]
+            )
+            
+            # normalizing the scores using mean and std
+            self.normalized_training_free_scores = (self.training_free_scores - self.scores_mean.reshape(-1,1)) / self.scores_std.reshape(-1,1)
 
+        elif self.normalization_type == "minmax":
+            # computing the min and max of the scores for the network pool considered
+            self.scores_min, self.scores_max = np.vstack(
+                [self.training_free_scores.min(axis=1), self.training_free_scores.max(axis=1)]
+            )
+            
+            # normalizing the scores using min and max
+            self.normalized_training_free_scores = (self.training_free_scores - self.scores_min.reshape(-1,1)) / (self.scores_max.reshape(-1,1) - self.scores_min.reshape(-1,1))
+        
         # combining the scores using the combination coefficients
         self.combined_scores = scores_combination_coeffs @ self.normalized_training_free_scores
 
@@ -334,12 +384,19 @@ class OscarEnv(NASEnv):
             map(lambda a: self.compute_hardware_cost(self.searchspace.architecture_to_list(a)), self.networks_pool), 
             dtype="float"
         )
-
-        # extracting the mean and std of the scores
-        self.hw_score_mean, self.hw_score_std = self.hardware_costs.mean(), self.hardware_costs.std()
+        if self.normalization_type == "std":
+            # extracting the mean and std of the scores
+            self.hw_score_mean, self.hw_score_std = self.hardware_costs.mean(), self.hardware_costs.std()
+            
+            # normalizing the scores using mean and std
+            self.normalized_hardware_costs = (self.hardware_costs - self.hw_score_mean) / self.hw_score_std
         
-        # normalizing the scores using mean and std
-        self.normalized_hardware_costs = (self.hardware_costs - self.hw_score_mean) / self.hw_score_std
+        elif self.normalization_type == "minmax":
+            # extracting the min and max of the scores
+            self.hw_score_min, self.hw_score_max = self.hardware_costs.min(), self.hardware_costs.max()
+            
+            # normalizing the scores using min and max
+            self.normalized_hardware_costs = (self.hardware_costs - self.hw_score_min) / (self.hw_score_max - self.hw_score_min)
     
     def _set_test_accuracies(self):
         """
@@ -411,14 +468,18 @@ class OscarEnv(NASEnv):
             if event.type == pygame.QUIT:
                 pygame.quit()
         
-        fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, gridspec_kw={"height_ratios": [8,1,1]}, dpi=400, layout="constrained")
+        fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, gridspec_kw={"height_ratios": [8,1,2]}, dpi=400, layout="constrained")
         
         y_getter = "test_accuracy" if use_accuracy else "training_free_score"
         y_label = f"Test Accuracy, {self.searchspace.dataset}" if use_accuracy else "Combined Training-Free Score"
         performance_measures = self.test_accuracies if use_accuracy else self.combined_scores
 
         if draw_background:
-            ax1 = create_background_scatter(ax1, self.hardware_costs, performance_measures)
+            normalized_performance = \
+                (performance_measures - performance_measures.min())/(performance_measures.max() - performance_measures.min())
+            # coloring points based on fitness value
+            c=self.combine_scores(normalized_performance, 1-self.normalized_hardware_costs)
+            ax1 = create_background_scatter(ax1, self.hardware_costs, performance_measures, c=c)
         
         architectures_and_costs = np.hstack((self.hardware_costs.reshape(-1,1), -1 * performance_measures.reshape(-1,1)))
         # computing the Pareto front
@@ -428,14 +489,20 @@ class OscarEnv(NASEnv):
         
         # drawing the Pareto front
         ax1.plot(
-            pareto_front[:,0], -1 * pareto_front[:,1], zorder=1, lw=1, ls="--", color="tab:orange", label="Pareto Front"
+            pareto_front[:,0], -1 * pareto_front[:,1], zorder=1, lw=2, ls="--", color="tab:red", label="Pareto Front"
         )
+        ax1.set_title(f"Latency vs. Performance Indicator (Weights: {self.weights})")
 
         # drawing the latency cutoff
-        ax1 = create_background_vlines(ax1, self.max_latency, label="Latency Cutoff")
+        if self.cutoff_percentile != 100:
+            ax1 = create_background_vlines(ax1, self.max_latency, label="Latency Cutoff")
+        
         # drawing the architectures
         ax1 = draw_architectures_on_background(ax1, *self.unpack_buffer(y_getter=y_getter), label="Current Network", zorder=2)
         ax1.set_xlabel("Latency (ms)"); ax1.set_ylabel(y_label)
+
+        # removing legend
+        ax1.get_legend().remove()
         
         # drawing test accuracy and latency percentile bars
         info_dict = self._get_info()
@@ -451,9 +518,11 @@ class OscarEnv(NASEnv):
         ax2.set_title("Current Network Test Accuracy & Latency Percentile")
 
         # drawing the reward bar
-        ax3 = draw_hbars(ax3, [r"$r_t$"], [self.step_reward], height=0.5)
-        ax3.set_xlim(-1, 1)
-        ax3.set_ylim(-0.5, 0.5)
+        ax3 = draw_hbars(ax3,
+                        [r"$r_t$", "hw_score(a)", "tf_score(a)"], 
+                        [self.current_net.fitness, info_dict["network_hw_score"], info_dict["network_tf_score"]],
+                        height=0.5)
+        #ax3.set_xlim(-1, 1)
         ax3.set_title("One-step Transition Reward")
         
         # setting a suptitle
@@ -468,6 +537,7 @@ class OscarEnv(NASEnv):
 
         if mode=="rgb_array":
             return pygame.surfarray.array3d(self.window)
+        
         elif mode=="human":
             # Update the display
             pygame.display.flip()
@@ -478,7 +548,7 @@ class OscarEnv(NASEnv):
         # Storing information associated with current observation in the buffer
         self.observations_buffer.append(self._get_info())
         return self._render_frame(
-            mode=mode, 
+            mode=self.render_mode, 
             draw_background=draw_background, 
             use_accuracy=getattr(self, "rendering_test_mode", False)
         )

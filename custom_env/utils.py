@@ -1,3 +1,4 @@
+import random
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
@@ -5,7 +6,7 @@ import gymnasium as gym
 from copy import copy
 import numpy as np
 from scipy import signal
-from scipy.stats import truncnorm
+from scipy.stats import truncnorm, uniform
 from typing import List, Text, Dict, Optional, Iterable
 from numpy.typing import NDArray
 from abc import ABC, abstractmethod
@@ -124,6 +125,25 @@ def create_epsilon_scheduler(
 
     return scheduler
 
+def shuffle_dict_values(d: Dict)->Dict:
+    """
+    Shuffles the values of a dictionary while preserving the keys.
+
+    Args:
+        d (dict): The input dictionary.
+
+    Returns:
+        dict: A new dictionary with the values shuffled.
+
+    Example:
+        >>> d = {'a': 1, 'b': 2, 'c': 3}
+        >>> shuffle_dict_values(d)
+        {'a': 3, 'b': 1, 'c': 2}
+    """
+    keys = list(d.keys())
+    values = list(d.values())
+    random.shuffle(values)
+    return dict(zip(keys, values))
 
 class ProbabilityDistribution(ABC):
     """
@@ -159,3 +179,28 @@ class TruncatedNormalDistribution(ProbabilityDistribution):
             loc=self.mean,
             scale=self.std,
             size=k)
+
+class UniformProbabilityDistribution(ProbabilityDistribution):
+    def __init__(self, lower_bound:float=0, upper_bound:float=1):
+        """
+        Initialize the uniform probability distribution with lower and upper bounds.
+
+        Args:
+            lower_bound: The lower bound of the distribution
+            upper_bound: The upper bound of the distribution
+        """
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
+        self.distribution = uniform(loc=lower_bound, scale=upper_bound-lower_bound)
+
+    def sample(self, k:int=1):
+        """
+        Sample k values from the uniform distribution.
+
+        Args:
+            k (optional, int): Number of samples to draw. Defaults to 1.
+        
+        Returns:
+            An array of k samples from the uniform distribution
+        """
+        return self.distribution.rvs(size=k)

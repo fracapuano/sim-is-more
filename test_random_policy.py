@@ -8,6 +8,7 @@ from pprint import pprint
 import time
 import numpy as np
 import pandas as pd
+from policy import TransitionsHistoryWrapper
 
 def parse_args()->object: 
     """Args function. 
@@ -30,6 +31,12 @@ def main():
     
     searchspace_interface = NATS_Interface(dataset=args.dataset)
     env = envs_dict[args.env.lower()](searchspace_api=searchspace_interface)
+
+    if args.render:
+        env.render_mode = "human"
+
+    if env.name == "marcella-plus":
+        env = TransitionsHistoryWrapper(env=env, history_len=5)
     
     print('Observation space:', env.observation_space)
     print('Action space:', env.action_space)
@@ -44,7 +51,7 @@ def main():
         start = time.time()
         while not done:  # Until the episode is over
             action = env.action_space.sample()	# Sample random action            
-            observation, reward, terminated, truncated, info = env.step(action)	# Step the simulator to the next timestep
+            obs, reward, terminated, truncated, info = env.step(action)	# Step the simulator to the next timestep
             if args.render:
                 env.render()
             
