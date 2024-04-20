@@ -133,7 +133,7 @@ def main():
     args = parse_args()
 
     if args.debug:
-        with open("default_training.json", "r") as f:
+        with open("src/default_training.json", "r") as f:
             default_args = argparse.Namespace(**json.load(f))
             # overriding default args with the ones passed as arguments
             for key, value in vars(default_args).items():
