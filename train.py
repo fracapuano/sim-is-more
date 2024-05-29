@@ -70,8 +70,8 @@ def parse_args()->object:
     parser.add_argument("--parallel-envs", default=True, type=boolean_string, help="Whether or not to train the agent using envs in multiprocessing")
     parser.add_argument("--offline", action="store_true", help="Wandb does not sync anything to the cloud")
     parser.add_argument("--epsilon-scheduling", default="const", type=str, 
-                        choices=["exp", "sawtooth", "sine"], help="Whether or not to use scheduling for the epsilon parameter within PPO. \
-                                                                   Accepted schedulers are ['exp', 'sawtooth', 'sine']")
+                        choices=["const", "exp", "sawtooth", "sine"], help="Whether or not to use scheduling for the epsilon parameter within PPO. \
+                                                                   Accepted schedulers are ['const', 'exp', 'sawtooth', 'sine']")
     parser.add_argument("--min-eps", default=0.1, type=float, help="Minimum value for epsilon in epsilon scheduling")
     parser.add_argument("--max-eps", default=0.3, type=float, help="Maximum value for epsilon in epsilon scheduling")
     parser.add_argument("--use-wandb-callback", default=False, help="Whether or not to append the SB3 Wandb callback to the list of used callbacks.")
@@ -152,7 +152,7 @@ def main():
         print(training_config)
     
     run = wandb.init(
-        project="Debug-Oscar",
+        project="Revamp-Oscar",
         config=training_config,
         mode="offline" if args.offline else "online",
         sync_tensorboard=True if args.use_wandb_callback else None
