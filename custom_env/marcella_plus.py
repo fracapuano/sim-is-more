@@ -46,7 +46,7 @@ class MarcellaPlusEnv(OscarEnv):
             self.blocks_distribution = {
                 op: TruncatedNormalDistribution(
                     mean=device_measurements[op].mean(), 
-                    std=5*device_measurements[op].std()
+                    std=device_measurements[op].std()
                 )
                 for op in self.searchspace.all_ops
             }

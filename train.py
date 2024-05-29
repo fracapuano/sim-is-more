@@ -4,14 +4,18 @@ import wandb
 import torch
 import warnings
 import argparse
+from utils import (
+    boolean_string, 
+    float_range, 
+    create_searchspace, 
+    get_distribution_devices
+)
 from policy import (
     PeriodicEvalCallback, 
     ChangeDevice_Callback,
     TransitionsHistoryWrapper
 )
 from src import (
-    Base_Interface,
-    NATS_Interface,
     to_scientific_notation, 
     seed_all
 )
@@ -19,7 +23,6 @@ from custom_env import (
     envs_dict, 
     build_vec_env
 )
-from typing import Callable
 from policy.policy import Policy
 from wandb.integration.sb3 import WandbCallback
 from stable_baselines3.common.callbacks import (
@@ -28,32 +31,6 @@ from stable_baselines3.common.callbacks import (
 )
 # ignoring Gymnasium getattr warnings
 warnings.filterwarnings('ignore', message='.*get variables from other wrappers', )  
-
-
-def boolean_string(s)->bool:
-    if s.lower() not in {'false', 'true'}:
-        raise ValueError('Not a valid boolean string')
-    return s.lower() == 'true'
-
-def float_range(min:float, max:float)->Callable:
-    """Return function handle of an argument type function for 
-       ArgumentParser checking a float range: mini <= arg <= maxi
-         mini - minimum acceptable argument
-         maxi - maximum acceptable argument"""
-
-    # Define the function with default arguments
-    def float_range_checker(arg):
-        """New Type function for argparse - a float within predefined range."""
-        try:
-            f = float(arg)
-        except ValueError:  
-            raise argparse.ArgumentTypeError("must be a floating point number")
-        if f < min or f > max:
-            raise argparse.ArgumentTypeError("must be in the closed interval [" + str(min) + "..." + str(max)+"]")
-        return f
-
-    # Return function handle to checking function
-    return float_range_checker
 
 def parse_args()->object: 
     """Args function. 
@@ -78,7 +55,8 @@ def parse_args()->object:
     parser.add_argument("--env_name", default="oscar", type=str,
                         choices=list(envs_dict.keys()), help=f"Environment to be used. One in {list(envs_dict.keys())}")
     parser.add_argument("--verbose", default=0, type=int, help="Verbosity value")
-    parser.add_argument("--leave-out-devices", nargs="*", default=[], type=str, help="Target device not to be used to fit Marcella/+.") 
+    parser.add_argument("--leave-out-devices", nargs="*", default=[], type=str, help="Target device not to be used to fit Marcella(+).") 
+    parser.add_argument("--distribution-devices", nargs="*", default=[], type=str, help="Target device to be used to compute the distribution for Marcella(+).") 
     parser.add_argument("--change-device-every", default=1, type=float_range(1, 100), help="Percentage of training timesteps after which to change the target device to be used.")
     parser.add_argument("--train-timesteps", default=1e5, type=float, help="Number of timesteps to train the RL algorithm with")
     parser.add_argument("--evaluate-every", default=1e4, type = float, help="Frequency with which to evaluate policy during training.")
@@ -92,8 +70,8 @@ def parse_args()->object:
     parser.add_argument("--parallel-envs", default=True, type=boolean_string, help="Whether or not to train the agent using envs in multiprocessing")
     parser.add_argument("--offline", action="store_true", help="Wandb does not sync anything to the cloud")
     parser.add_argument("--epsilon-scheduling", default="const", type=str, 
-                        choices=["exp", "sawtooth", "sine"], help="Whether or not to use scheduling for the epsilon parameter within PPO. \
-                                                                   Accepted schedulers are ['exp', 'sawtooth', 'sine']")
+                        choices=["const", "exp", "sawtooth", "sine"], help="Whether or not to use scheduling for the epsilon parameter within PPO. \
+                                                                   Accepted schedulers are ['const', 'exp', 'sawtooth', 'sine']")
     parser.add_argument("--min-eps", default=0.1, type=float, help="Minimum value for epsilon in epsilon scheduling")
     parser.add_argument("--max-eps", default=0.3, type=float, help="Maximum value for epsilon in epsilon scheduling")
     parser.add_argument("--use-wandb-callback", default=False, help="Whether or not to append the SB3 Wandb callback to the list of used callbacks.")
@@ -106,27 +84,6 @@ def parse_args()->object:
     parser.add_argument("--debug", action="store_true", help="Default mode, ignore all configurations")
     
     return parser.parse_args()
-
-def create_searchspace(searchspace:str, dataset:str)->Base_Interface:
-    """
-    Creates a search space based on the given search space type and dataset.
-
-    Args:
-        searchspace (str): The type of search space to create.
-        dataset (str): The dataset to use for creating the search space.
-
-    Returns:
-        Base_Interface: An instance of the search space interface.
-
-    Raises:
-        NotImplementedError: If the specified search space is not implemented yet.
-    """
-    if searchspace.lower() == "nats":
-        return NATS_Interface(dataset=dataset)
-    else:
-        raise NotImplementedError(
-            f"Searchspace {searchspace} not implemented yet. Searchspaces that will be implemented: ['nats', 'fbnet']. FBNet to do."
-        )
 
 def main():
     """Performs training and logs info to wandb."""
@@ -162,7 +119,9 @@ def main():
     
     if "marcella" in env.name:
         # leaving some devices from the list of devices to be used while training
-        env.devices = list(set(searchspace_interface.get_devices()) - set(args.leave_out_devices))
+        env.devices = get_distribution_devices(
+            available_devices=searchspace_interface.get_devices(), chosen_devices=args.distribution_devices
+        )
     
     # build the envs according to spec
     envs = build_vec_env(
@@ -193,7 +152,7 @@ def main():
         print(training_config)
     
     run = wandb.init(
-        project="Debug-Oscar",
+        project="Revamp-Oscar",
         config=training_config,
         mode="offline" if args.offline else "online",
         sync_tensorboard=True if args.use_wandb_callback else None
