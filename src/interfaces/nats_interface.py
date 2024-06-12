@@ -78,6 +78,15 @@ class NATS_Interface(Base_Interface):
             "std": std_accuracy
         }
 
+    def get_latency_stats(self)->Dict[str, float]:
+        """Returns the latency stats for the considered dataset."""
+        return {
+            "min": self._data[f"min_{self.target_device}_latency"],
+            "max": self._data[f"max_{self.target_device}_latency"],
+            "mean": self._data[f"mean_{self.target_device}_latency"],
+            "std": self._data[f"std_{self.target_device}_latency"],
+        }
+
     def blocks_latency(self, custom_devices:Optional[List[Text]]=None)->Dict[Text, NDArray]:
         """Returns the latencies measurements of each operation across `devices`
         
