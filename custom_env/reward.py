@@ -1,10 +1,27 @@
 from .utils import NASIndividual
 import numpy as np
-from typing import Text, Union, Iterable
+from typing import Text, Iterable, Literal
 from numpy.typing import NDArray
+from src.interfaces.base_interface import Base_Interface
 
 class Rewardv0:
+    """
+    Reward function for the HW-NAS environment.
+    Background material available at: https://github.com/fracapuano/OSCAR/issues/17#issuecomment-2137170731
+    """
+    def __init__(self,
+                 searchspace:Base_Interface,
+                 score_names:Iterable[Text]=["normalized_validation_accuracy", "normalized_latency"],
+                 weights:NDArray=np.array([0.5, 0.5]), 
+                ):
+        
+        self.searchspace = searchspace
+        self.score_names = score_names
+        self.weights = weights
 
+        self.accuracy_stats = self.searchspace.get_accuracy_stats()
+        self.latency_stats = self.searchspace.get_latency_stats()
+        
     def fitness_function(self, individual:NASIndividual)->NASIndividual: 
         """
         Directly overwrites the fitness attribute for a given individual.
@@ -15,76 +32,79 @@ class Rewardv0:
         Returns:
             NASIndividual: Individual, with fitness field.
         """
-        if individual.fitness is None:  # None at initialization only
-            tf_scores = np.array([
-                self.normalize_score(
-                    score_value=self.searchspace.list_to_score(input_list=individual.architecture, score=score), 
-                    score_name=score,
-                    type=self.normalization_type
-                )
-                for score in self.score_names
-            ])
-            hardware_cost = np.array([
-                self.normalize_score(
-                    score_value=self.compute_hardware_cost(architecture_list=individual.architecture),
-                    score_name=f"{self.target_device}_{metric}",
-                    type=self.normalization_type
-                )
-                for metric in ["latency"]  # change here to add more hardware aware metrics
-            ])
-            # individual fitness is a linear combination of multiple scores
-            network_tf_score = (np.ones_like(tf_scores) / len(tf_scores)) @ tf_scores
-            network_hw_score =  1 - ((np.ones_like(hardware_cost) / len(hardware_cost)) @ hardware_cost)
+        if individual.fitness is None:  # None at initialization time
+            normalized_accuracy_score = self.get_normalized_accuracy(individual)
+            normalized_latency_score =  self.get_normalized_latency(individual)
             
-            # saving the scores within each individual
-            individual._scores = \
-                {s_name: s for s_name, s in zip(self.score_names, tf_scores)} | \
-                {p_name: p for p_name, p in zip(["normalized-latency"], hardware_cost)} | \
-                {"network_tf_score": network_tf_score, 
-                    "network_hw_score": network_hw_score}
-
             # in the hardware aware contest performance is in a direct tradeoff with hardware performance
-            individual._fitness = self.combine_scores(network_tf_score, network_hw_score).item()
+            individual._fitness = self.combine_scores(normalized_accuracy_score, normalized_latency_score).item()
         
         return individual
 
-    def combine_scores(self, performance_scores:Union[float, NDArray], efficiency_score:Union[float, NDArray])->Union[float, NDArray]:
+    def get_normalized_accuracy(self, individual:NASIndividual, norm_style:Literal["minmax", "zscale"]="minmax")->float:
+        """
+        Normalize the accuracy of the individual.
+        
+        Args:
+            individual (NASIndividual): The individual to normalize.
+            norm_style (Literal["minmax", "zscale"], optional): The normalization style. Defaults to "minmax".
+        
+        Raises:
+            ValueError: If an invalid normalization style is provided.
+            
+        Returns:
+            float: The normalized accuracy.
+        """
+        accuracy = self.searchspace.architecture_to_accuracy(individual.architecture)
+        if norm_style == "minmax":
+            # min-max normalize the accuracy
+            return (accuracy - self.accuracy_stats["min"]) / (self.accuracy_stats["max"] - self.accuracy_stats["min"])
+        elif norm_style == "zscale":
+            # z-score normalize the accuracy
+            return (accuracy - self.accuracy_stats["mean"]) / self.accuracy_stats["std"]
+        else:
+            raise ValueError(f"Invalid normalization style: {norm_style}. Accepted values are 'minmax' and 'zscale'")
+        
+    def get_normalized_latency(self, individual:NASIndividual)->float:
+        """
+        Normalize the latency of the individual.
+        
+        Args:
+            individual (NASIndividual): The individual to normalize.
+        
+        Returns:
+            float: The normalized latency.
+        """
+        latency = self.searchspace.architecture_to_score(\
+            individual.architecture, score=f"{self.searchspace.target_device}_latency")\
+        
+        # min-max inverse-normalize the latency
+        return 1 - ((self.latency_stats["max"] - latency) / (self.latency_stats["max"] - self.latency_stats["min"]))
+
+    def combine_scores(self, performance_scores:float, efficiency_score:float)->float:
         """
         Combine the performance and efficiency scores into a single score.
 
         Args:
-            performance_scores (Union[float, NDArray]): The performance scores.
-            efficiency_score (Union[float, NDArray]): The efficiency scores.
+            performance_scores (float): The performance scores.
+            efficiency_score (float): The efficiency scores.
 
         Returns:
-            Union[float, NDArray]: The combined scores.
+            float: The combined scores.
         """
-        to_array = lambda x: np.array(x) if not isinstance(x, np.ndarray) else x
-        log_squash = lambda x: x - np.log10(1e-1+1-x)
-
-        w = -0.3
-        # transform = lambda x: log_squash(to_array(x)).reshape(-1,1)
-        transform = lambda x: to_array(x).reshape(-1,1)
+        if not (isinstance(performance_scores, float) and isinstance(efficiency_score, float)):
+            raise ValueError(f"""
+                The input scores must both be float! 
+                Provided input: performance_score {type(performance_scores)}, efficiency_score {type(efficiency_score)}
+            """)
         
-        # return np.hstack([transform(performance_scores), transform(efficiency_score)]) @ self.weights
-        return transform(performance_scores) * transform(1e-3 + 1-efficiency_score)**w
+        return (np.array([performance_scores, efficiency_score]) @ self.weights).item()  # returning a float
 
-    def compute_hardware_cost(self, architecture_list:Iterable[Text])->float:
-        """
-        Computes the hardware cost based on the given architecture list.
-
-        Args:
-            architecture_list (Iterable[Text]): The list representation of the architecture.
-
-        Returns:
-            float: The computed hardware cost.
-        """
-        return self.searchspace.list_to_score(input_list=architecture_list, score=f"{self.target_device}_latency")
-
-    def get_reward(self, new_individual:NASIndividual)->float:
+    def get_reward(self, individual:NASIndividual)->float:
         """
         Compute the reward associated to the modification operation.
         Here, the reward is the fitness of the newly generated individual
         """
-        # removing a small penalty to the reward to discourage stalling
-        return new_individual.fitness - 1
+        # here the reward is the fitness of the individual
+        return individual.fitness
+
