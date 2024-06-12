@@ -37,7 +37,7 @@ class Rewardv0:
             normalized_latency_score =  self.get_normalized_latency(individual)
             
             # in the hardware aware contest performance is in a direct tradeoff with hardware performance
-            individual._fitness = self.combine_scores(normalized_accuracy_score, normalized_latency_score).item()
+            individual._fitness = self.combine_scores(normalized_accuracy_score, normalized_latency_score)
         
         return individual
 
@@ -106,5 +106,5 @@ class Rewardv0:
         Here, the reward is the fitness of the newly generated individual
         """
         # here the reward is the fitness of the individual
-        return individual.fitness
+        return self.fitness_function(individual).fitness
 
