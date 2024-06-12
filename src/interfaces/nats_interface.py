@@ -69,7 +69,7 @@ class NATS_Interface(Base_Interface):
 
         mean_accuracy = sum(self.accuracy_values) / len(self.accuracy_values)
         squared_diff = [(x - mean_accuracy) ** 2 for x in self.accuracy_values]
-        std_accuracy = (sum(squared_diff) / len(self.accuracy_values-1)) ** 0.5
+        std_accuracy = (sum(squared_diff) / (len(self.accuracy_values)-1)) ** 0.5
 
         return {
             "min": min(self.accuracy_values),
