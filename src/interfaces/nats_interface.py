@@ -59,6 +59,25 @@ class NATS_Interface(Base_Interface):
     def dataset(self)->str:
         return self._dataset
     
+    def get_accuracy_stats(self)->Dict[str, float]:
+        """Returns the accuracy stats for the considered dataset."""
+        if not hasattr(self, "accuracy_values"):
+            # iterable containing the accuracy values for each network in the search space
+            self.accuracy_values = [
+                self.lookup_table[i][self.dataset]["test_accuracy"] for i in range(len(self))
+            ]
+
+        mean_accuracy = sum(self.accuracy_values) / len(self.accuracy_values)
+        squared_diff = [(x - mean_accuracy) ** 2 for x in self.accuracy_values]
+        std_accuracy = (sum(squared_diff) / len(self.accuracy_values-1)) ** 0.5
+
+        return {
+            "min": min(self.accuracy_values),
+            "max": max(self.accuracy_values),
+            "mean": mean_accuracy,
+            "std": std_accuracy
+        }
+
     def blocks_latency(self, custom_devices:Optional[List[Text]]=None)->Dict[Text, NDArray]:
         """Returns the latencies measurements of each operation across `devices`
         
