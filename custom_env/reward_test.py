@@ -1,13 +1,20 @@
-from custom_env.reward import Rewardv0
+from icecream import ic
+from custom_env.oscar import OscarEnv
 from custom_env.utils import NASIndividual
 from src.interfaces.nats_interface import NATS_Interface as NATS_Searchspace
 
 searchspace = NATS_Searchspace(target_device="edgegpu")
+env = OscarEnv(searchspace_api=searchspace)
 
-architecture, index = "|avg_pool_3x3~0|+|nor_conv_1x1~0|skip_connect~1|+|nor_conv_1x1~0|skip_connect~1|skip_connect~2|", 0
-individual = NASIndividual(architecture=architecture, index=index, architecture_string_to_idx=searchspace.architecture_to_index)
+individual = NASIndividual(architecture=None, index=None, architecture_string_to_idx=searchspace.architecture_to_index)
+individual = env.mount_architecture(individual, searchspace.encode_architecture(env.networks_pool[0]))
 
-reward_handler = Rewardv0(searchspace=searchspace)
+env.reset()
+obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
 
-reward = reward_handler.get_reward(individual)
-print(reward)
+ic(obs)
+ic(reward)
+ic(terminated)
+ic(truncated)
+ic(info)
+
