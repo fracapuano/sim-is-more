@@ -32,7 +32,7 @@ class Rewardv0:
         Returns:
             NASIndividual: Individual, with fitness field.
         """
-        if individual.fitness is None:  # None at initialization time
+        if individual.fitness is None:  # None at initialization
             normalized_accuracy_score = self.get_normalized_accuracy(individual)
             normalized_latency_score =  self.get_normalized_latency(individual)
             
@@ -55,7 +55,7 @@ class Rewardv0:
         Returns:
             float: The normalized accuracy.
         """
-        accuracy = self.searchspace.architecture_to_accuracy(individual.architecture)
+        accuracy = self.searchspace.list_to_accuracy(individual.architecture)
         if norm_style == "minmax":
             # min-max normalize the accuracy
             return (accuracy - self.accuracy_stats["min"]) / (self.accuracy_stats["max"] - self.accuracy_stats["min"])
@@ -65,32 +65,41 @@ class Rewardv0:
         else:
             raise ValueError(f"Invalid normalization style: {norm_style}. Accepted values are 'minmax' and 'zscale'")
         
-    def get_normalized_latency(self, individual:NASIndividual)->float:
+    def get_normalized_latency(self, individual:NASIndividual, norm_style:Literal["minmax", "zscale"]="minmax")->float:
         """
         Normalize the latency of the individual.
         
         Args:
             individual (NASIndividual): The individual to normalize.
+            norm_style (Literal["minmax", "zscale"], optional): The normalization style. Defaults to "minmax".
         
         Returns:
-            float: The normalized latency.
+            float: The normalized latency. Higher is better.
         """
-        latency = self.searchspace.architecture_to_score(\
+        latency = self.searchspace.list_to_score(\
             individual.architecture, score=f"{self.searchspace.target_device}_latency")\
         
-        # min-max inverse-normalize the latency
-        return 1 - ((self.latency_stats["max"] - latency) / (self.latency_stats["max"] - self.latency_stats["min"]))
+        if norm_style == "minmax":
+            # min-max inverse-normalize the latency
+            return 1 - ((self.latency_stats["max"] - latency) / (self.latency_stats["max"] - self.latency_stats["min"]))
+
+        elif norm_style == "zscale":
+            # z-score inverse-normalize the latency
+            return  -1 * ((latency - self.latency_stats["mean"]) / self.latency_stats["std"])
+
+        else:
+            raise ValueError(f"Invalid normalization style: {norm_style}. Accepted values are 'minmax' and 'zscale'")
 
     def combine_scores(self, performance_scores:float, efficiency_score:float)->float:
         """
         Combine the performance and efficiency scores into a single score.
 
         Args:
-            performance_scores (float): The performance scores.
-            efficiency_score (float): The efficiency scores.
+            performance_scores (float): The performance scores. The higher the better.
+            efficiency_score (float): The efficiency scores. The higher the better.
 
         Returns:
-            float: The combined scores.
+            float: The combined score. The higher the better.
         """
         if not (isinstance(performance_scores, float) and isinstance(efficiency_score, float)):
             raise ValueError(f"""
