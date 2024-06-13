@@ -9,6 +9,7 @@ from .render import (
 )
 import numpy as np
 from itertools import chain
+from .reward import Rewardv0
 from .nas_env import NASEnv
 from gymnasium import spaces
 from collections import deque
@@ -53,6 +54,9 @@ class OscarEnv(NASEnv):
         self.target_device = target_device
         # casting weights to numpy array
         self.weights = np.array(weights)
+        # initializing the reward handler -- this moves reward computation out of the environment
+        self.reward_handler = Rewardv0(searchspace=self.searchspace, weights=self.weights)
+
         # initializing the observations buffer size, for rendering purposes
         self.observations_buffer_size = observation_buffer_size
         self.observations_buffer = deque(maxlen=self.observations_buffer_size)
@@ -150,6 +154,7 @@ class OscarEnv(NASEnv):
         Returns:
             NASIndividual: Individual, with fitness field.
         """
+        DeprecationWarning("This method is deprecated. Use the fitness_function method from the Rewardv0 class.")
         if individual.fitness is None:  # None at initialization only
             tf_scores = np.array([
                 self.normalize_score(
@@ -194,6 +199,7 @@ class OscarEnv(NASEnv):
         Returns:
             Union[float, NDArray]: The combined scores.
         """
+        DeprecationWarning("This method is deprecated. Use the fitness_function method from the Rewardv0 class.")
         to_array = lambda x: np.array(x) if not isinstance(x, np.ndarray) else x
         log_squash = lambda x: x - np.log10(1e-1+1-x)
 
@@ -214,6 +220,7 @@ class OscarEnv(NASEnv):
         Returns:
             float: The computed hardware cost.
         """
+        DeprecationWarning("This method is deprecated. Use the fitness_function method from the Rewardv0 class.")
         return self.searchspace.list_to_score(input_list=architecture_list, score=f"{self.target_device}_latency")
 
     def _get_obs(self)->Dict[Text, spaces.Space]:
@@ -254,13 +261,12 @@ class OscarEnv(NASEnv):
         # return bool(self.current_net_latency > self.max_latency)
         False
 
-    def get_reward(self, new_individual:NASIndividual)->float:
+    def get_reward(self, individual:NASIndividual)->float:
         """
         Compute the reward associated to the modification operation.
         Here, the reward is the fitness of the newly generated individual
         """
-        # removing a small penalty to the reward to discourage stalling
-        return new_individual.fitness - 1
+        return self.reward_handler.get_reward(individual=individual)
 
     def step(self, action:NDArray)->Tuple[NDArray, float, bool, dict]: 
         """Steps the episode having a given action.
@@ -297,7 +303,7 @@ class OscarEnv(NASEnv):
         # score individual based on its test accuracy
         reinforced_individual = self.fitness_function(reinforced_individual)
         # compute the reward associated with producing reinforced_individual
-        reward = self.get_reward(new_individual=reinforced_individual)
+        reward = self.get_reward(individual=reinforced_individual)
         
         # overwrite current obs architecture
         self._observation["architecture"] = new_individual_encoded
