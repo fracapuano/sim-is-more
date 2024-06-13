@@ -50,8 +50,9 @@ class OscarEnv(NASEnv):
             max_timesteps=max_timesteps, 
             normalization_type=normalization_type
         )
-        # setting the target device
+        # setting the target device, env and searchspace-wise
         self.target_device = target_device
+        self.searchspace.target_device = target_device
         # casting weights to numpy array
         self.weights = np.array(weights)
         # initializing the reward handler -- this moves reward computation out of the environment
@@ -515,7 +516,7 @@ class OscarEnv(NASEnv):
         Returns:
             Optional[NDArray]: The rendered frame as an RGB array if mode is "rgb_array", None otherwise.
         """ 
-        screen_size = (640*2, 480*2)
+        screen_size = (640*1.5, 480*1.5)
 
         if not use_accuracy:
             # populating the combined scores and hardware costs attributes if not already done
@@ -549,7 +550,7 @@ class OscarEnv(NASEnv):
             normalized_performance = \
                 (performance_measures - performance_measures.min())/(performance_measures.max() - performance_measures.min())
             # coloring points based on fitness value
-            c=self.combine_scores(normalized_performance, 1-self.normalized_hardware_costs)
+            c = self.combine_scores(normalized_performance, 1-self.normalized_hardware_costs)
             ax1 = create_background_scatter(ax1, self.hardware_costs, performance_measures, c=c)
         
         architectures_and_costs = np.hstack((self.hardware_costs.reshape(-1,1), -1 * performance_measures.reshape(-1,1)))
