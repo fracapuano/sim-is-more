@@ -9,6 +9,9 @@ class Rewardv0:
     Reward function for the HW-NAS environment.
     Background material available at: https://github.com/fracapuano/OSCAR/issues/17#issuecomment-2137170731
     """
+    performance_score = "normalized_validation_accuracy"
+    efficiency_score = "normalized_latency"
+    
     def __init__(self,
                  searchspace:Base_Interface,
                  score_names:Iterable[Text]=["normalized_validation_accuracy", "normalized_latency"],
@@ -21,7 +24,19 @@ class Rewardv0:
 
         self.accuracy_stats = self.searchspace.get_accuracy_stats()
         self.latency_stats = self.searchspace.get_latency_stats()
-        
+    
+    def get_performance_score(self, individual:NASIndividual)->float:
+        """
+        Return the performance score of the individual.
+        """
+        return self.get_normalized_accuracy(individual)
+    
+    def get_efficiency_score(self, individual:NASIndividual)->float:
+        """
+        Return the efficiency score of the individual.
+        """
+        return self.get_normalized_latency(individual)
+
     def fitness_function(self, individual:NASIndividual)->NASIndividual: 
         """
         Directly overwrites the fitness attribute for a given individual.
@@ -33,13 +48,22 @@ class Rewardv0:
             NASIndividual: Individual, with fitness field.
         """
         if individual.fitness is None:  # None at initialization
-            normalized_accuracy_score = self.get_normalized_accuracy(individual)
-            normalized_latency_score =  self.get_normalized_latency(individual)
+            normalized_performance_score = self.get_performance_score(individual)
+            normalized_efficiency_score =  self.get_efficiency_score(individual)
             
             # in the hardware aware contest performance is in a direct tradeoff with hardware performance
-            individual._fitness = self.combine_scores(normalized_accuracy_score, normalized_latency_score)
+            individual._fitness = self.combine_scores(normalized_performance_score, normalized_efficiency_score)
         
         return individual
+
+    def get_individual_scores(self, individual:NASIndividual)->dict:
+        """
+        Return the performance and efficiency scores of the individual.
+        """
+        return {
+            "reward_performance_score": self.get_performance_score(individual),
+            "reward_efficiency_score": self.get_efficiency_score(individual)
+        }
 
     def get_normalized_accuracy(self, individual:NASIndividual, norm_style:Literal["minmax", "zscale"]="minmax")->float:
         """
@@ -81,11 +105,11 @@ class Rewardv0:
         
         if norm_style == "minmax":
             # min-max inverse-normalize the latency
-            return 1 - ((self.latency_stats["max"] - latency) / (self.latency_stats["max"] - self.latency_stats["min"]))
+            return 1 - ((latency - self.latency_stats["min"]) / (self.latency_stats["max"] - self.latency_stats["min"]))
 
         elif norm_style == "zscale":
             # z-score inverse-normalize the latency
-            return  -1 * ((latency - self.latency_stats["mean"]) / self.latency_stats["std"])
+            return -1 * ((latency - self.latency_stats["mean"]) / self.latency_stats["std"])
 
         else:
             raise ValueError(f"Invalid normalization style: {norm_style}. Accepted values are 'minmax' and 'zscale'")
