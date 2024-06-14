@@ -20,7 +20,7 @@ from numpy.typing import NDArray
 from .utils import NASIndividual
 from scipy.stats import percentileofscore
 from typing import Iterable, Text, Tuple, Dict, Optional, Union
-from warnings import warn, DeprecationWarning
+from warnings import warn
 
 
 class OscarEnv(NASEnv):
