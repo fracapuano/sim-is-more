@@ -164,9 +164,6 @@ class NASEnv(gym.Env):
         net = self._observation if not isinstance(self._observation, dict) else self._observation.get("architecture", None)
 
         self.current_net = self.mount_architecture(self.current_net, net)
-        
-        # updating the fitness value
-        self.current_net = self.fitness_function(self.current_net)
 
     def perform_modification(self, new_individual:NDArray, modification:Tuple[int, int])->NDArray: 
         """
