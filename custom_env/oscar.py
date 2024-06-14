@@ -20,6 +20,8 @@ from numpy.typing import NDArray
 from .utils import NASIndividual
 from scipy.stats import percentileofscore
 from typing import Iterable, Text, Tuple, Dict, Optional, Union
+from warnings import warn, DeprecationWarning
+
 
 class OscarEnv(NASEnv):
     metadata = {
@@ -155,7 +157,8 @@ class OscarEnv(NASEnv):
         Returns:
             NASIndividual: Individual, with fitness field.
         """
-        DeprecationWarning("This method is deprecated. Use the fitness_function method from the Rewardv0 class.")
+        warn("This method is deprecated. Use the fitness_function method from the reward_handler attribute!", DeprecationWarning, stacklevel=2)
+        
         if individual.fitness is None:  # None at initialization only
             tf_scores = np.array([
                 self.normalize_score(
@@ -200,7 +203,8 @@ class OscarEnv(NASEnv):
         Returns:
             Union[float, NDArray]: The combined scores.
         """
-        DeprecationWarning("This method is deprecated. Use the fitness_function method from the Rewardv0 class.")
+        warn("This method is deprecated. Use the fitness_function method from the reward_handler attribute!", DeprecationWarning, stacklevel=2)
+
         to_array = lambda x: np.array(x) if not isinstance(x, np.ndarray) else x
         log_squash = lambda x: x - np.log10(1e-1+1-x)
 
@@ -221,7 +225,8 @@ class OscarEnv(NASEnv):
         Returns:
             float: The computed hardware cost.
         """
-        DeprecationWarning("This method is deprecated. Use the fitness_function method from the Rewardv0 class.")
+        warn("This method is deprecated. Use the fitness_function method from the reward_handler attribute!", DeprecationWarning, stacklevel=2)
+
         return self.searchspace.list_to_score(input_list=architecture_list, score=f"{self.target_device}_latency")
 
     def _get_obs(self)->Dict[Text, spaces.Space]:
@@ -231,24 +236,20 @@ class OscarEnv(NASEnv):
         """Return the info dictionary."""
         current_net_latency = self._get_obs()["latency_value"].item()
 
-        training_free_coefficients = np.ones(len(self.score_names)) / len(self.score_names)
-        training_free_score = \
-            np.array(itemgetter(*self.score_names)(self.current_net._scores)).reshape(-1,) @ training_free_coefficients
-        
         info_dict = {
             "current_network": self.current_net.architecture,
-            "training_free_score": training_free_score,
             "timestep": self.timestep_counter,
             "current_net_latency": current_net_latency,
             "current_net_latency_percentile": percentileofscore(self.hardware_costs, current_net_latency),
             "latency_cutoff": self.max_latency,
             "is_terminated": self.is_terminated(),
             "is_truncated": self.is_truncated(),
+            "networks_seen": len(self.networks_seen),
+            
             # test_accuracy is obtained from a lookup table and never accessed during training
             "test_accuracy": self.searchspace.list_to_accuracy(input_list=self.current_net.architecture),
-            "networks_seen": len(self.networks_seen)
         }
-        info_dict |= self.current_net._scores
+        info_dict |= self.reward_handler.get_individual_scores(individual=self.current_net)
         
         return info_dict
 
@@ -260,7 +261,7 @@ class OscarEnv(NASEnv):
         May be setted to always return False when no termination condition is needed.
         """
         # return bool(self.current_net_latency > self.max_latency)
-        False
+        return False
 
     def get_reward(self, individual:NASIndividual)->float:
         """
@@ -301,8 +302,6 @@ class OscarEnv(NASEnv):
                                               architecture_string_to_idx=self.searchspace.architecture_to_index)
         # mounting the architecture on the new individual
         reinforced_individual = self.mount_architecture(reinforced_individual, new_individual_encoded)
-        # score individual based on its test accuracy
-        reinforced_individual = self.fitness_function(reinforced_individual)
         # compute the reward associated with producing reinforced_individual
         reward = self.get_reward(individual=reinforced_individual)
         
