@@ -5,7 +5,7 @@ from gymnasium import spaces
 from src import Base_Interface
 from .utils import NASIndividual
 from numpy.typing import NDArray
-from typing import Iterable, Tuple, Text, Optional
+from typing import Iterable, Tuple, Text, Optional, Union
 
 class NASEnv(gym.Env): 
     """
@@ -307,4 +307,32 @@ class NASEnv(gym.Env):
 
     def get_max_timesteps(self)->int:
         return self.max_timesteps
+    
+    def architecture_to_individual(self, architecture:Union[list[Text], Text])->NASIndividual:
+        """
+        Turns an architecture, whether in list or architecture string format into a NASIndividual,
+        allowing fitness computation through the reward handler interface.
+        
+        Args:
+            architecture (Union[list[Text], Text]): Input architecture, either as a list of operations 
+                                                    or architecture string.
+
+        Returns:
+            NASIndividual: Architecture individual.
+        """
+        if not isinstance(architecture, (list, str)):
+            raise ValueError(f"Input architecture {architecture} is neither of type:'str' or type:'list'!")
+
+        architecture_encoded = self.searchspace.encode_architecture(
+            self.searchspace.list_to_architecture(architecture) if isinstance(architecture, list)
+            else architecture
+        )
+
+        empty_individual = NASIndividual(
+            architecture=None, 
+            index=None, 
+            architecture_string_to_idx=self.searchspace.architecture_to_index
+        )
+        
+        return self.mount_architecture(empty_individual, architecture_encoded)
     
