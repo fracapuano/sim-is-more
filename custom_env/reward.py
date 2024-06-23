@@ -141,3 +141,49 @@ class Rewardv0:
         # here the reward is the fitness of the individual
         return self.fitness_function(individual).fitness
 
+
+class Rewardv1(Rewardv0):
+    """
+    Reward function for the HW-NAS environment.
+    Overwrites methods of Rewardv0 to make improvements in performance and efficiency
+    exponentially more important.
+    """
+    def __init__(self, *args, exponent=4, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.exponent = exponent  # Control the steepness of the exponential curve
+
+    def combine_scores(self, performance_score: float, efficiency_score: float) -> float:
+        """
+        Combine the performance and efficiency scores into a single score with an exponential trait.
+
+        Args:
+            performance_score (float): The performance score. The higher the better.
+            efficiency_score (float): The efficiency score. The higher the better.
+
+        Returns:
+            float: The combined score. The higher the better.
+        """
+        if not (isinstance(performance_score, float) and isinstance(efficiency_score, float)):
+            raise ValueError(f"""
+                The input scores must both be float! 
+                Provided input: performance_score {type(performance_score)}, efficiency_score {type(efficiency_score)}
+            """)
+
+        # Apply exponential transformation to both scores
+        transformed_performance = self._exponential_transform(performance_score)
+        transformed_efficiency = self._exponential_transform(efficiency_score)
+
+        # Combine the transformed scores using the weights
+        return (np.array([transformed_performance, transformed_efficiency]) @ self.weights).item()
+
+    def _exponential_transform(self, score: float) -> float:
+        """
+        Apply an exponential transformation to the score.
+
+        Args:
+            score (float): The input score (between 0 and 1).
+
+        Returns:
+            float: The transformed score.
+        """
+        return score ** self.exponent
