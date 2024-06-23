@@ -64,7 +64,7 @@ def main():
         searchspace_api=searchspace_interface,
         scores=configuration["score_list"],
         target_device=args.target_device if args.use_custom_device else configuration["target_device"],
-        weights=[configuration["task_weight"], configuration["hardware_weight"]] 
+        weights=[configuration["performance_weight"], configuration["efficiency_weight"]] 
         )
     
     if env_name == "marcella-plus":

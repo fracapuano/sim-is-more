@@ -33,6 +33,7 @@ def main():
     env = envs_dict[args.env.lower()](searchspace_api=searchspace_interface)
 
     if args.render:
+        env.rendering_test_mode = True
         env.render_mode = "human"
 
     if env.name == "marcella-plus":

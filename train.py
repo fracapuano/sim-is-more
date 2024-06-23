@@ -4,6 +4,7 @@ import wandb
 import torch
 import warnings
 import argparse
+import numpy as np
 from utils import (
     boolean_string, 
     float_range, 
@@ -42,10 +43,9 @@ def parse_args()->object:
     parser.add_argument("--dataset", default="cifar10", type=str, help="Dataset on which to run the search. One in ['cifar10', 'cifar100', 'imagenet']")
     parser.add_argument("--searchspace", default="nats", type=str, 
                         choices=["nats"], help=f"Searchspace to be used. One in ['nats']")  # fbnet will follow
-    parser.add_argument("--target-device", default="edgegpu", 
-                        choices=["edgegpu", "raspi4", "pixel3", "eyeriss", "fpga"], type=str, help="Target device to be used.")
-    parser.add_argument("--task-weight", default=0.5, type=float, help="Task-associated weight in the reward function. This directly balances the hardware performance.")
-    parser.add_argument("--hardware-weight", default=0.5, type=float, help="Hardware-associated weight in the reward function. This directly balances the hardware performance.")
+    parser.add_argument("--target-device", default="edgegpu", type=str, help="Target device to be used.")  # TODO: add choices = env.get_devices()
+    parser.add_argument("--performance-weight", default=0.5, type=float, help="Task-associated weight in the reward function. This directly balances the hardware performance.")
+    parser.add_argument("--efficiency-weight", default=0.5, type=float, help="Hardware-associated weight in the reward function. This directly balances the hardware performance.")
     
     """The following args help define the training procedure."""
     parser.add_argument("--algorithm", default="PPO", type=str, 
@@ -97,7 +97,7 @@ def main():
                 setattr(args, key, value)
     
     # silencing wandb output
-    # os.environ["WANDB_SILENT"] = "true" 
+    os.environ["WANDB_SILENT"] = "true" 
     
     # set seed for reproducibility
     seed_all(seed=args.seed)
@@ -110,7 +110,7 @@ def main():
         searchspace_api=searchspace_interface, 
         scores=args.score_list,
         target_device=args.target_device,
-        weights=[args.task_weight, args.hardware_weight],
+        weights=[args.performance_weight, args.efficiency_weight],
         normalization_type=args.normalization_type
     )
 
@@ -118,9 +118,16 @@ def main():
     wrappers_list = [history_wrap] if env.name == "marcella-plus" else None
     
     if "marcella" in env.name:
+        available_devices = searchspace_interface.get_devices()
+        if len(args.distribution_devices)!=0: 
+            distribution_devices = args.distribution_devices
+        else:
+            distribution_devices = np.random.choice(len(available_devices))
+
         # leaving some devices from the list of devices to be used while training
         env.devices = get_distribution_devices(
-            available_devices=searchspace_interface.get_devices(), chosen_devices=args.distribution_devices
+            available_devices=available_devices, 
+            chosen_devices=distribution_devices
         )
     
     # build the envs according to spec
@@ -138,14 +145,16 @@ def main():
         train_timesteps=to_scientific_notation(args.train_timesteps),
         random_seed=args.seed,
         target_device=args.target_device,
-        task_weight=args.task_weight,
-        hardware_weight=args.hardware_weight,
+        performance_weight=args.performance_weight,
+        efficiency_weight=args.efficiency_weight,
         score_list=args.score_list,
         learning_rate=args.learning_rate,
         epsilon_scheduling=args.epsilon_scheduling,
         min_eps=args.min_eps,
         max_eps=args.max_eps,
-        history_len=args.history_len
+        history_len=args.history_len,
+        training_devices=args.target_device if "marcella" not in env.name else env.devices,
+        available_devices=env.searchspace.get_devices(),
     )
 
     if args.verbose > 0: 
@@ -164,6 +173,7 @@ def main():
     # dumping training config to json file
     if not os.path.exists(best_model_path):
         os.makedirs(best_model_path)
+    
     with open(f"{best_model_path}/training_config.json", "w+") as f:
         args_dict = vars(args)
         if "marcella" in args.env_name:

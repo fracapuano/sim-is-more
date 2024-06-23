@@ -42,7 +42,7 @@ class NATS_Interface(Base_Interface):
         elif path_to_lookup is not None:
             # either loading the lookup table or the synthetic devices lookup table
             with open(path_to_lookup, "r") as lookup_file:
-                    self.lookup_table = {int(k): v for k, v in json.load(lookup_file).items()}
+                self.lookup_table = {int(k): v for k, v in json.load(lookup_file).items()}
 
             with open(path_to_lookup_index, "r") as lookup_index_file:
                 self.architecture_to_index = json.load(lookup_index_file)

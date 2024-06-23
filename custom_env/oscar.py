@@ -9,7 +9,7 @@ from .render import (
 )
 import numpy as np
 from itertools import chain
-from .reward import Rewardv0
+from .reward import Rewardv1 as Reward
 from .nas_env import NASEnv
 from gymnasium import spaces
 from collections import deque
@@ -26,7 +26,7 @@ from warnings import warn
 class OscarEnv(NASEnv):
     metadata = {
         "render_modes": ["human", "rgb_array"],
-        "render_fps": 15, 
+        "render_fps": 30,
     }
     """
     gym.Env for Hardware-aware RL-based NAS. 
@@ -58,8 +58,7 @@ class OscarEnv(NASEnv):
         # casting weights to numpy array
         self.weights = np.array(weights)
         # initializing the reward handler -- this moves reward computation out of the environment
-        self.reward_handler = Rewardv0(searchspace=self.searchspace, weights=self.weights)
-
+        self.reward_handler = Reward(searchspace=self.searchspace, weights=self.weights)
         # initializing the observations buffer size, for rendering purposes
         self.observations_buffer_size = observation_buffer_size
         self.observations_buffer = deque(maxlen=self.observations_buffer_size)
@@ -239,6 +238,7 @@ class OscarEnv(NASEnv):
         info_dict = {
             "current_network": self.current_net.architecture,
             "timestep": self.timestep_counter,
+            "reward": self.reward_handler.get_reward(individual=self.current_net),
             "current_net_latency": current_net_latency,
             "current_net_latency_percentile": percentileofscore(self.hardware_costs, current_net_latency),
             "latency_cutoff": self.max_latency,
@@ -340,6 +340,64 @@ class OscarEnv(NASEnv):
 
         return self._get_obs(), self._get_info()
     
+    def plot_networks_on_searchspace(
+            self, 
+            terminal_networks:list[NASIndividual], 
+            fitness_color:bool=True)->plt.axis:
+        """
+        Creates a visualization of the terminal networks plotted on the whole searchspace.
+
+        Args:
+            terminal_networks (list[NASIndividual]): The terminal networks to plot.
+            fitness_color (bool, optional): Whether to color the networks based on their fitness. Defaults to True.
+        
+        Returns:
+            plt.axis: The axis of the plot.
+        """
+        if not isinstance(terminal_networks, list):
+            # turning iterable into list to allow multiple iterations
+            terminal_networks = list(terminal_networks)
+            
+        if not all(map(lambda x: isinstance(x, NASIndividual), terminal_networks)):
+            raise ValueError("Input networks are not all of NASIndividual type!")
+        
+        def get_individual_coordinates(individual:NASIndividual)->Tuple[float, float]:
+            performance_score = self.reward_handler.get_performance_score(individual=individual)
+            efficiency_score = self.reward_handler.get_efficiency_score(individual=individual)
+
+            return (efficiency_score, performance_score)
+        
+        _, ax = plt.subplots(dpi=150)
+
+        fitness = None  # override, if fitness_color
+        if fitness_color:
+            fitness = list(
+                map(
+                    lambda n: self.reward_handler.\
+                        fitness_function(
+                            self.architecture_to_individual(n)
+                        ).fitness,
+                    self.networks_pool
+                    )
+                )
+        
+        ax = create_background_scatter(
+            ax, 
+            *zip(*map(lambda n: get_individual_coordinates(self.architecture_to_individual(n)), 
+                      self.networks_pool)),
+            c=fitness
+        )
+
+        # This plot the networks on the background 
+        ax.scatter(
+            *zip(*map(get_individual_coordinates, terminal_networks)),
+            c="red",
+            s=25,
+            marker="X"
+        )
+
+        return ax
+
     def _set_combined_scores(self):
         """
         Calculates the combined scores for all architectures in the network pool.
@@ -481,11 +539,9 @@ class OscarEnv(NASEnv):
         performance_measures = self.test_accuracies if use_accuracy else self.combined_scores
 
         if draw_background:
-            normalized_performance = \
-                (performance_measures - performance_measures.min())/(performance_measures.max() - performance_measures.min())
             # coloring points based on fitness value
-            c = self.combine_scores(normalized_performance, 1-self.normalized_hardware_costs)
-            ax1 = create_background_scatter(ax1, self.hardware_costs, performance_measures, c=c)
+            fitness = list(map(lambda n: self.reward_handler.fitness_function(self.architecture_to_individual(n)).fitness, self.networks_pool))
+            ax1 = create_background_scatter(ax1, self.hardware_costs, performance_measures, c=fitness)
         
         architectures_and_costs = np.hstack((self.hardware_costs.reshape(-1,1), -1 * performance_measures.reshape(-1,1)))
         # computing the Pareto front
@@ -504,7 +560,12 @@ class OscarEnv(NASEnv):
             ax1 = create_background_vlines(ax1, self.max_latency, label="Latency Cutoff")
         
         # drawing the architectures
-        ax1 = draw_architectures_on_background(ax1, *self.unpack_buffer(y_getter=y_getter), label="Current Network", zorder=2)
+        ax1 = draw_architectures_on_background(
+            ax1,
+            *self.unpack_buffer(y_getter=y_getter), 
+            label="Current Network", 
+            zorder=2
+        )
         ax1.set_xlabel("Latency (ms)"); ax1.set_ylabel(y_label)
 
         # removing legend
@@ -525,8 +586,12 @@ class OscarEnv(NASEnv):
 
         # drawing the reward bar
         ax3 = draw_hbars(ax3,
-                        [r"$r_t$", "hw_score(a)", "tf_score(a)"], 
-                        [self.current_net.fitness, info_dict["network_hw_score"], info_dict["network_tf_score"]],
+                        [r"$r_t$", "efficiency_score(a)", "performance_score(a)"], 
+                        [
+                            info_dict["reward"], 
+                            info_dict["reward_efficiency_score"], 
+                            info_dict["reward_performance_score"]
+                        ],
                         height=0.5)
         #ax3.set_xlim(-1, 1)
         ax3.set_title("One-step Transition Reward")
