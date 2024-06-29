@@ -1,3 +1,4 @@
+from .nas_env import NASEnv
 from .utils import NASIndividual
 import numpy as np
 from typing import Text, Iterable, Literal
@@ -11,7 +12,8 @@ class Rewardv0:
     """
     performance_score = "normalized_validation_accuracy"
     efficiency_score = "normalized_latency"
-    
+
+    reward_version: str = "rewardv0"
     def __init__(self,
                  searchspace:Base_Interface,
                  score_names:Iterable[Text]=["normalized_validation_accuracy", "normalized_latency"],
@@ -23,8 +25,14 @@ class Rewardv0:
         self.weights = weights
 
         self.accuracy_stats = self.searchspace.get_accuracy_stats()
-        self.latency_stats = self.searchspace.get_latency_stats()
     
+    @property
+    def latency_stats(self):
+        if not hasattr(self, "_env"):
+            return self.searchspace.get_latency_stats()
+        elif hasattr(self, "_env") and getattr(self, "_env").name == "marcella-plus":
+            return self._env.latency_stats
+
     def get_performance_score(self, individual:NASIndividual)->float:
         """
         Return the performance score of the individual.
@@ -100,8 +108,13 @@ class Rewardv0:
         Returns:
             float: The normalized latency. Higher is better.
         """
-        latency = self.searchspace.list_to_score(\
-            individual.architecture, score=f"{self.searchspace.target_device}_latency")\
+        if not hasattr(self, "_env"):
+            latency = self.searchspace.list_to_score(\
+                individual.architecture, score=f"{self.searchspace.target_device}_latency")
+        elif hasattr(self, "_env") and getattr(self, "_env").name == "marcella-plus":  # updating how we compute latency for M+
+            latency = self._env.compute_hardware_cost(
+                individual.architecture
+            )
         
         if norm_style == "minmax":
             # min-max inverse-normalize the latency
@@ -141,6 +154,9 @@ class Rewardv0:
         # here the reward is the fitness of the individual
         return self.fitness_function(individual).fitness
 
+    def _set_env(self, env:NASEnv):
+        self._env = env
+
 
 class Rewardv1(Rewardv0):
     """
@@ -148,6 +164,8 @@ class Rewardv1(Rewardv0):
     Overwrites methods of Rewardv0 to make improvements in performance and efficiency
     exponentially more important.
     """
+    reward_version: str = "rewardv1"
+
     def __init__(self, *args, exponent=4, **kwargs):
         super().__init__(*args, **kwargs)
         self.exponent = exponent  # Control the steepness of the exponential curve
@@ -187,3 +205,47 @@ class Rewardv1(Rewardv0):
             float: The transformed score.
         """
         return score ** self.exponent
+    
+class Rewardv2(Rewardv1):
+    """
+    Reward function for the HW-NAS environment.
+    Overwrites methods of Rewardv0 to make improvements in performance and efficiency
+    exponentially more important.
+    """
+    reward_version: str = "rewardv2"
+
+    def __init__(self, *args, exponent=4, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.exponent = exponent  # Control the steepness of the exponential curve
+
+    def get_reward(self, individual:NASIndividual)->float:
+        """
+        Compute the reward associated to the modification operation.
+        Here, the reward is the fitness of the newly generated individual.
+
+        The reward is also offset with a small costant to prevent the agent from stalling.
+        """
+        # here the reward is the fitness of the individual
+        return self.fitness_function(individual).fitness - 0.5
+    
+class Rewardv3(Rewardv2):
+    """
+    Reward function for the HW-NAS environment.
+    Overwrites methods of Rewardv0 to make improvements in performance and efficiency
+    exponentially more important.
+    """
+    reward_version: str = "rewardv3"
+
+    def __init__(self, *args, exponent=4, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.exponent = exponent  # Control the steepness of the exponential curve
+
+    def get_reward(self, individual:NASIndividual)->float:
+        """
+        Compute the reward associated to the modification operation.
+        Here, the reward is the fitness of the newly generated individual.
+
+        The reward is also offset with a small costant to prevent the agent from stalling.
+        """
+        # here the reward is the fitness of the individual
+        return self.fitness_function(individual).fitness ** self.exponent # + delta
