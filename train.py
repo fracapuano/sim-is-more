@@ -176,7 +176,8 @@ def main():
     inner_callback = PeriodicEvalCallback(
         env=envs,
         n_eval_episodes=args.test_episodes, 
-        best_model_path=best_model_path
+        best_model_path=best_model_path,
+        log_video=False
     )
     
     # invoke inner_callback every `evaluate_every` timesteps

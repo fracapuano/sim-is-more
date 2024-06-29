@@ -5,14 +5,25 @@ from stable_baselines3.common.evaluation import evaluate_policy
 import wandb
 import numpy as np
 from typing import Text, List
+import matplotlib.pyplot as plt
+from PIL import Image
+from numpy.typing import NDArray
 
 class ScoresEvolutionTracker:
     def __init__(self, 
-                 metrics:List[Text]=["training_free_score", "current_net_latency", "current_net_latency_percentile", "test_accuracy"],
+                 metrics:List[Text]=[
+                     "training_free_score", 
+                     "current_net_latency", 
+                     "current_net_latency_percentile", 
+                     "test_accuracy"
+                    ],
                  number_of_envs:int=1,
                  episode_length:int=50,
                  number_of_episodes:int=50):
         
+        # buffer to track the networks observed
+        self.networks = []
+
         # Which metrics to log
         self.metrics = metrics
         # Number of environments
@@ -36,6 +47,7 @@ class ScoresEvolutionTracker:
         for metric in self.metrics:
             setattr(self, f"{metric}_buffer", np.zeros((self.number_of_episodes, self.episode_length)))
         
+        self.networks = [[] for _ in range(self.number_of_episodes)]
 
     def logmetrics_callback(self, locals_dict:dict, globals_dict:dict):
         """
@@ -55,6 +67,8 @@ class ScoresEvolutionTracker:
             buffer = getattr(self, f"{metric}_buffer")
             buffer[episode_index, timestep_counter] = (info_dict.get(metric, -1))
         
+        # adding the networks observed to the logged buffer
+        self.networks[episode_index].append("/".join(info_dict["current_network"]))
         self.number_of_terminated_episodes += 1 if info_dict["is_terminated"] else 0
 
 
@@ -74,9 +88,11 @@ class PeriodicEvalCallback(BaseCallback):
             render:bool=False,
             verbose:int=0,
             n_eval_episodes:int=50,
-            best_model_path:Text="models/"):
+            best_model_path:Text="models/",
+            log_video:bool=False):
         """Init function defines callback context."""
         super().__init__(verbose)
+        self.log_video = log_video
 
         """Suppressing this warning as it is raised by stable_baselines3 `env_method` function."""
         self.episode_duration = env.env_method("get_max_timesteps")[0]
@@ -99,6 +115,27 @@ class PeriodicEvalCallback(BaseCallback):
         # reset environments
         self._envs.reset()
 
+    def figure_to_rgb(self, fig)->NDArray:
+        # TODO: Move to utils module
+        """
+        Convert a matplotlib figure to a numpy array with RGB values.
+
+        :param fig: A matplotlib figure.
+        :return: A numpy array with RGB values.
+        """
+        fig.canvas.draw()
+        plt.close(fig)
+        # Get the RGBA buffer from the figure
+        X = np.array(fig.canvas.renderer.buffer_rgba())
+        # Convert to RGB
+        figure_rgb_array = np.transpose(
+            np.array(Image.fromarray(X).convert('RGB')),
+            (2, 0, 1)  # now it is (channel, height, width)
+        )
+
+        return figure_rgb_array
+
+    
     def _on_step(self) -> bool:
         """
         This method will be called by the model after each call to `_env.step()`.
@@ -127,20 +164,74 @@ class PeriodicEvalCallback(BaseCallback):
             tracked_values = getattr(self.episodes_tracker, f"{metric}_buffer")[:, 1:].mean(axis=0)
             # using wandb to log the evolution of the metric over training
             data = [[x, y] for (x, y) in zip(np.arange(1, self.episode_duration), tracked_values)]
-            table = wandb.Table(data=data, columns = ["timestep", metric])
-            wandb.log(
-                {f"{metric}-evolution-over-training": \
-                    wandb.plot.line(table, 
-                                    "timestep", 
-                                    metric,
-                                    title=f"Average Evolution of {metric}")
-                }
-            )
+            # transposing the networks logged
+            transposed_networks_list = [
+                [self.episodes_tracker.networks[i][j] for i in range(len(self.episodes_tracker.networks))]
+                for j in range(len(self.episodes_tracker.networks[0]))
+            ]
+
             # logging the average initial and terminal values for the metric considered
             wandb.log({
                 f"Average initial {metric}": tracked_values[0],
                 f"Average terminal {metric}": tracked_values[-1]
             })
+
+        if self.log_video:  # optionally logging video -- increases memory usage and slows down evaluation
+            # this logs the networks observed over the many test episodes
+            networks_table = wandb.Table(
+                data=transposed_networks_list, 
+                columns=[f"Episode_{i}" for i in range(self.episodes_tracker.number_of_episodes)]
+            )
+            wandb.log(
+                {"Network Evolutions": networks_table}
+            )
+            # retrieving the plot_networks_on_searchspace on the env object
+            plot_networks_on_searchspace = \
+                lambda terminal_networks: self.model.get_env().env_method(
+                    "plot_networks_on_searchspace",
+                    terminal_networks, False,  # positional args to the method, [terminal_networks, fitness_color]
+                    indices=0  # only using the first env for this call
+                )[0]
+            
+            # turning each network into an individual for rendering purposes
+            network_string_to_individual = lambda network_string: \
+                self.model.get_env().env_method(
+                    "architecture_to_individual",
+                    network_string.split("/"), # architectures are "/"-joined here
+                    indices=0  # only using the first env for this call
+                )[0]
+
+            frames = []
+            for timestep_index, terminal_networks in enumerate(transposed_networks_list):
+                # plotting the networks on the searchspace across test episodes                
+                networks_plot_fig, networks_plot_ax = plot_networks_on_searchspace(
+                    terminal_networks=map(network_string_to_individual, terminal_networks),
+                )
+                networks_plot_ax.set_title(f"Timestep Index: {timestep_index}")
+                frames.append(
+                    self.figure_to_rgb(networks_plot_fig)
+                )
+
+                wandb.log({"episode_terminal_networks": wandb.Image(networks_plot_fig)})
+            
+            wandb.log(
+                {
+                    "Test Episode/Percentage Of Training": wandb.Video(
+                        np.stack(frames, axis=0), 
+                        format="gif"
+                    )
+                }
+            )
+            
+        table = wandb.Table(data=data, columns = ["timestep", metric])
+        wandb.log(
+            {f"{metric}-evolution-over-training": \
+                wandb.plot.line(table, 
+                                "timestep", 
+                                metric,
+                                title=f"Average Evolution of {metric}")
+            }
+        )
         
         # How many episodes were terminated during the evaluation
         wandb.log({"TerminationRate": self.episodes_tracker.number_of_terminated_episodes / self.n_eval_episodes})
