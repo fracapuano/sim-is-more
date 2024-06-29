@@ -155,6 +155,7 @@ def main():
         history_len=args.history_len,
         training_devices=args.target_device if "marcella" not in env.name else env.devices,
         available_devices=env.searchspace.get_devices(),
+        reward_version=env.reward_handler.reward_version
     )
 
     if args.verbose > 0: 
