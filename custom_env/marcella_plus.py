@@ -159,6 +159,9 @@ class MarcellaPlusEnv(OscarEnv):
 
         # shuffling the operations latency distributions at each reset
         #self.blocks_distribution = shuffle_dict_values(self.blocks_distribution)
+        
+        # aligning the reward handler with the current state of Marcella+
+        self.reward_handler._env = self
 
         # sampling a new distribution of blocks' latencies
         self._sample_blocks_latencies()
@@ -166,6 +169,13 @@ class MarcellaPlusEnv(OscarEnv):
         # computing hardware cost samples
         self._set_hardware_costs()
         self._set_normalization_params()
+
+        self.latency_stats = {
+                "min": self.hardware_costs.min().item(),
+                "max": self.hardware_costs.max().item(),
+                "mean": self.hardware_costs.mean().item(),
+                "std": self.hardware_costs.std().item()
+            }
         
         # possibly storing the blocks' latencies in the observation
         # self._observation["blocks_latency"] = self.blocks_latency
