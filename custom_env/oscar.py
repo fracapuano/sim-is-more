@@ -334,6 +334,71 @@ class OscarEnv(NASEnv):
 
         return self._get_obs(), self._get_info()
     
+    def plot_networks_on_searchspace(
+            self, 
+            terminal_networks:list[NASIndividual], 
+            fitness_color:bool=True)->Tuple[plt.figure, plt.axis]:
+        """
+        Creates a visualization of the terminal networks plotted on the whole searchspace.
+
+        Args:
+            terminal_networks (list[NASIndividual]): The terminal networks to plot.
+            fitness_color (bool, optional): Whether to color the networks based on their fitness. Defaults to True.
+        
+        Returns:
+            plt.axis: The axis of the plot.
+        """
+        if not isinstance(terminal_networks, list):
+            # turning iterable into list to allow multiple iterations
+            terminal_networks = list(terminal_networks)
+            
+        if not all(map(lambda x: isinstance(x, NASIndividual), terminal_networks)):
+            raise ValueError("Input networks are not all of NASIndividual type!")
+        
+        def get_individual_coordinates(individual:NASIndividual)->Tuple[float, float]:
+            performance_score = self.reward_handler.get_performance_score(individual=individual)
+            efficiency_score = self.reward_handler.get_efficiency_score(individual=individual)
+
+            return (efficiency_score, performance_score)
+        
+        if len(plt.get_fignums())>0:  # a picture is currently open
+            plt.clf()  # clears the current figure
+            fig = plt.gcf()
+        else:
+            fig = plt.figure(dpi=150)
+        
+        # retrieving the figure's axis
+        ax = plt.gca()
+
+        fitness = None  # override, if fitness_color
+        if fitness_color:
+            fitness = list(
+                map(
+                    lambda n: self.reward_handler.
+                        fitness_function(
+                            self.architecture_to_individual(n)
+                        ).fitness,
+                    self.networks_pool
+                    )
+                )
+        
+        ax = create_background_scatter(
+            ax,
+            *zip(*map(lambda n: get_individual_coordinates(self.architecture_to_individual(n)),
+                      self.networks_pool)),
+            c=fitness
+        )
+
+        # This plot the networks on the background
+        ax.scatter(
+            *zip(*map(get_individual_coordinates, terminal_networks)),
+            c="red",
+            s=25,
+            marker="X"
+        )
+
+        return fig, ax
+
     def _set_combined_scores(self):
         """
         Calculates the combined scores for all architectures in the network pool.
