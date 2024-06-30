@@ -155,7 +155,9 @@ def main():
         history_len=args.history_len,
         training_devices=args.target_device if "marcella" not in env.name else env.devices,
         available_devices=env.searchspace.get_devices(),
-        reward_version=env.reward_handler.reward_version
+        reward_version=env.reward_handler.reward_version,
+        reward_performance_score=env.reward_handler.performance_score,
+        reward_efficiency_score=env.reward_handler.efficiency_score
     )
 
     if args.verbose > 0: 
@@ -188,7 +190,7 @@ def main():
         env=envs,
         n_eval_episodes=args.test_episodes, 
         best_model_path=best_model_path,
-        log_video=False
+        log_video=True
     )
     
     # invoke inner_callback every `evaluate_every` timesteps
