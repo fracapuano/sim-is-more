@@ -16,12 +16,10 @@ class Rewardv0:
     reward_version: str = "rewardv0"
     def __init__(self,
                  searchspace:Base_Interface,
-                 score_names:Iterable[Text]=["normalized_validation_accuracy", "normalized_latency"],
                  weights:NDArray=np.array([0.5, 0.5]), 
                 ):
         
         self.searchspace = searchspace
-        self.score_names = score_names
         self.weights = weights
 
         self.accuracy_stats = self.searchspace.get_accuracy_stats()
@@ -228,24 +226,52 @@ class Rewardv2(Rewardv1):
         # here the reward is the fitness of the individual
         return self.fitness_function(individual).fitness - 0.5
     
-class Rewardv3(Rewardv2):
+class Rewardv3(Rewardv0):
     """
     Reward function for the HW-NAS environment.
-    Overwrites methods of Rewardv0 to make improvements in performance and efficiency
-    exponentially more important.
+    Overwrites methods of Rewardv0 to consider training free metrics instead of
+    the validation accuracy for fitness computation.
     """
     reward_version: str = "rewardv3"
+    performance_score = "normalized_training_free_score"
 
-    def __init__(self, *args, exponent=4, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.exponent = exponent  # Control the steepness of the exponential curve
+        self.score_names = [
+            "naswot_score",
+            "logsynflow_score",
+            "skip_score"
+        ]
 
-    def get_reward(self, individual:NASIndividual)->float:
+    def get_performance_score(self, individual:NASIndividual)->float:
         """
-        Compute the reward associated to the modification operation.
-        Here, the reward is the fitness of the newly generated individual.
+        Return the performance score of the individual.
+        """
+        return self.get_normalized_training_free_score(individual)
 
-        The reward is also offset with a small costant to prevent the agent from stalling.
+    def get_normalized_training_free_score(
+            self, 
+            individual:NASIndividual, 
+            norm_style:Literal["minmax", "zscale"]="minmax"
+        )->float:
         """
-        # here the reward is the fitness of the individual
-        return self.fitness_function(individual).fitness ** self.exponent # + delta
+        Return the normalized training free score of the individual.
+        """
+        training_free_scores = []
+        for score_name in self.score_names:
+            # compute the individual's score
+            individual_score = self.searchspace.list_to_score(individual.architecture, score_name)
+
+            if norm_style == "minmax":
+                score_min, score_max = self.searchspace.get_score_min_and_max(score_name)
+                training_free_scores.append(
+                    (individual_score - score_min) / (score_max - score_min)
+                )
+            elif norm_style == "zscale":
+                score_mean, score_std = self.searchspace.get_score_mean_and_std(score_name)
+                training_free_scores.append(
+                    (individual_score - score_mean) / (score_std)
+                )
+        # return the average of the training free scores -- giving equal weight to all scores
+        return np.mean(training_free_scores).item()
+    
