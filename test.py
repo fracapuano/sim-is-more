@@ -57,7 +57,10 @@ def main():
     # reading setting parameters from training config file
     algorithm, env_name = configuration["algorithm"], configuration["env_name"]
 
-    searchspace_interface = create_searchspace(searchspace=configuration["searchspace"], dataset=configuration["dataset"])
+    searchspace_interface = create_searchspace(
+        searchspace=configuration["searchspace"], 
+        dataset=configuration["dataset"]
+    )
     
     # create env (gym.Env)
     env = envs_dict[env_name.lower()](
@@ -74,7 +77,7 @@ def main():
                 searchspace_api=searchspace_interface,
                 scores=configuration["score_list"],
                 target_device=args.target_device,
-                weights=[configuration["task_weight"], configuration["hardware_weight"]],
+                weights=[configuration["performance_weight"], configuration["efficiency_weight"]],
                 cutoff_percentile=100
             )
         
