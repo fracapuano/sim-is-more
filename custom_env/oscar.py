@@ -340,6 +340,12 @@ class OscarEnv(NASEnv):
 
         return self._get_obs(), self._get_info()
     
+    def get_fitness_of_network_in_pool(self, n: NASIndividual)->float:
+        """Handle function to map each network in the pool to its fitness value."""
+        return self.reward_handler.fitness_function(
+            self.architecture_to_individual(n)
+        ).fitness,
+    
     def plot_networks_on_searchspace(
             self, 
             terminal_networks:list[NASIndividual], 
@@ -380,10 +386,7 @@ class OscarEnv(NASEnv):
         if fitness_color:
             fitness = list(
                 map(
-                    lambda n: self.reward_handler.
-                        fitness_function(
-                            self.architecture_to_individual(n)
-                        ).fitness,
+                    self.get_fitness_of_network_in_pool,
                     self.networks_pool
                     )
                 )
