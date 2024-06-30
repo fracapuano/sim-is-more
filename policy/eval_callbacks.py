@@ -135,6 +135,41 @@ class PeriodicEvalCallback(BaseCallback):
 
         return figure_rgb_array
 
+    def plot_networks_on_searchspace(
+            self, env: VecEnv, terminal_networks: list[NASIndividual]
+        )->tuple[plt.figure, plt.axis]:
+        """
+        Accesses the plot_networks_on_searchspace method of the input model.
+
+        Args:
+            env (VecEnv): Environment object.
+            terminal_networks (list[NASIndividual]): List of architectures to plot.
+        
+        Returns:
+            Tuple[plt.figure, plt.axis]: Figure and Axis for the plot considered.
+        """
+        return env.env_method(
+            "plot_networks_on_searchspace",
+            terminal_networks, False,  # positional args to the method, [terminal_networks, fitness_color]
+            indices=0  # only using the first env for this call
+        )[0]
+
+    def network_string_to_individual(self, env:VecEnv, network_string: Text)->NASIndividual:
+        """
+        Accesses the architecture_to_individual method of the input model.
+
+        Args:
+            env (VecEnv): Environment object.
+            network_string (Text): Architecture to convert.
+        
+        Returns:
+            NASIndividual: Individual object.
+        """
+        return env.env_method(
+            "architecture_to_individual",
+            network_string.split("/"), # architectures are "/"-joined here
+            indices=0  # only using the first env for this call
+        )[0]
     
     def _on_step(self) -> bool:
         """
@@ -203,9 +238,14 @@ class PeriodicEvalCallback(BaseCallback):
 
             frames = []
             for timestep_index, terminal_networks in enumerate(transposed_networks_list):
-                # plotting the networks on the searchspace across test episodes                
-                networks_plot_fig, networks_plot_ax = plot_networks_on_searchspace(
-                    terminal_networks=map(network_string_to_individual, terminal_networks),
+                terminal_individuals = []
+                for n in terminal_networks:  # have to iterate as functional approach is not pickleable
+                    terminal_individuals.append(
+                        self.network_string_to_individual(self.model.get_env(), n)
+                    )
+                
+                networks_plot_fig, networks_plot_ax = self.plot_networks_on_searchspace(
+                    self.model.get_env(), terminal_individuals
                 )
                 networks_plot_ax.set_title(f"Timestep Index: {timestep_index}")
                 frames.append(
