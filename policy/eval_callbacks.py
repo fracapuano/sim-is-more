@@ -9,13 +9,19 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from numpy.typing import NDArray
 
+class NASIndividual:
+    """Dummy class merely for typing purposes"""
+    pass
+
 class ScoresEvolutionTracker:
     def __init__(self, 
                  metrics:List[Text]=[
                      "training_free_score", 
                      "current_net_latency", 
                      "current_net_latency_percentile", 
-                     "test_accuracy"
+                     "test_accuracy",
+                     "reward_performance_score",
+                     "reward_efficiency_score"
                     ],
                  number_of_envs:int=1,
                  episode_length:int=50,
@@ -170,7 +176,7 @@ class PeriodicEvalCallback(BaseCallback):
             network_string.split("/"), # architectures are "/"-joined here
             indices=0  # only using the first env for this call
         )[0]
-    
+
     def _on_step(self) -> bool:
         """
         This method will be called by the model after each call to `_env.step()`.
@@ -199,17 +205,27 @@ class PeriodicEvalCallback(BaseCallback):
             tracked_values = getattr(self.episodes_tracker, f"{metric}_buffer")[:, 1:].mean(axis=0)
             # using wandb to log the evolution of the metric over training
             data = [[x, y] for (x, y) in zip(np.arange(1, self.episode_duration), tracked_values)]
-            # transposing the networks logged
-            transposed_networks_list = [
-                [self.episodes_tracker.networks[i][j] for i in range(len(self.episodes_tracker.networks))]
-                for j in range(len(self.episodes_tracker.networks[0]))
-            ]
-
             # logging the average initial and terminal values for the metric considered
             wandb.log({
                 f"Average initial {metric}": tracked_values[0],
                 f"Average terminal {metric}": tracked_values[-1]
             })
+
+            table = wandb.Table(data=data, columns = ["timestep", metric])
+            wandb.log(
+                {f"{metric}-evolution-over-training": \
+                    wandb.plot.line(table, 
+                                    "timestep", 
+                                    metric,
+                                    title=f"(Average) Evolution of {metric}")
+                }
+            )
+
+        # transposing the networks logged
+        transposed_networks_list = [
+            [self.episodes_tracker.networks[i][j] for i in range(len(self.episodes_tracker.networks))]
+            for j in range(len(self.episodes_tracker.networks[0]))
+        ]
 
         if self.log_video:  # optionally logging video -- increases memory usage and slows down evaluation
             # this logs the networks observed over the many test episodes
@@ -220,22 +236,6 @@ class PeriodicEvalCallback(BaseCallback):
             wandb.log(
                 {"Network Evolutions": networks_table}
             )
-            # retrieving the plot_networks_on_searchspace on the env object
-            plot_networks_on_searchspace = \
-                lambda terminal_networks: self.model.get_env().env_method(
-                    "plot_networks_on_searchspace",
-                    terminal_networks, False,  # positional args to the method, [terminal_networks, fitness_color]
-                    indices=0  # only using the first env for this call
-                )[0]
-            
-            # turning each network into an individual for rendering purposes
-            network_string_to_individual = lambda network_string: \
-                self.model.get_env().env_method(
-                    "architecture_to_individual",
-                    network_string.split("/"), # architectures are "/"-joined here
-                    indices=0  # only using the first env for this call
-                )[0]
-
             frames = []
             for timestep_index, terminal_networks in enumerate(transposed_networks_list):
                 terminal_individuals = []
@@ -248,6 +248,9 @@ class PeriodicEvalCallback(BaseCallback):
                     self.model.get_env(), terminal_individuals
                 )
                 networks_plot_ax.set_title(f"Timestep Index: {timestep_index}")
+                networks_plot_ax.set_xlabel("Efficiency score")
+                networks_plot_ax.set_ylabel("Performance score")
+
                 frames.append(
                     self.figure_to_rgb(networks_plot_fig)
                 )
@@ -263,16 +266,6 @@ class PeriodicEvalCallback(BaseCallback):
                 }
             )
             
-        table = wandb.Table(data=data, columns = ["timestep", metric])
-        wandb.log(
-            {f"{metric}-evolution-over-training": \
-                wandb.plot.line(table, 
-                                "timestep", 
-                                metric,
-                                title=f"Average Evolution of {metric}")
-            }
-        )
-        
         # How many episodes were terminated during the evaluation
         wandb.log({"TerminationRate": self.episodes_tracker.number_of_terminated_episodes / self.n_eval_episodes})
 
