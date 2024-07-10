@@ -1,7 +1,7 @@
 from .nas_env import NASEnv
 from .utils import NASIndividual
 import numpy as np
-from typing import Text, Iterable, Literal
+from typing import Literal
 from numpy.typing import NDArray
 from src.interfaces.base_interface import Base_Interface
 
@@ -216,7 +216,7 @@ class Rewardv2(Rewardv1):
         super().__init__(*args, **kwargs)
         self.exponent = exponent  # Control the steepness of the exponential curve
 
-    def get_reward(self, individual:NASIndividual)->float:
+    def get_reward(self, individual:NASIndividual, **kwargs)->float:
         """
         Compute the reward associated to the modification operation.
         Here, the reward is the fitness of the newly generated individual.
@@ -274,4 +274,75 @@ class Rewardv3(Rewardv0):
                 )
         # return the average of the training free scores -- giving equal weight to all scores
         return np.mean(training_free_scores).item()
+
+class Rewardv4(Rewardv3):
+    """
+    Reward function for the HW-NAS environment.
+    Overwrites methods of Rewardv3 to introduce exponentiation of reward components.
+    """
+    reward_version: str = "rewardv4"
+
+    def __init__(self, *args, exponent=6, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.exponent = exponent  # Control the steepness of the exponential curve
+    
+    def combine_scores(self, performance_score: float, efficiency_score: float) -> float:
+        """
+        Combine the performance and efficiency scores into a single score with an exponential trait.
+
+        Args:
+            performance_score (float): The performance score. The higher the better.
+            efficiency_score (float): The efficiency score. The higher the better.
+
+        Returns:
+            float: The combined score. The higher the better.
+        """
+        if not (isinstance(performance_score, float) and isinstance(efficiency_score, float)):
+            raise ValueError(f"""
+                The input scores must both be float! 
+                Provided input: performance_score {type(performance_score)}, efficiency_score {type(efficiency_score)}
+            """)
+
+        # Apply exponential transformation to both scores
+        transformed_performance = self._exponential_transform(performance_score)
+        transformed_efficiency = self._exponential_transform(efficiency_score)
+
+        # Combine the transformed scores using the weights
+        return (np.array([transformed_performance, transformed_efficiency]) @ self.weights).item()
+
+    def _exponential_transform(self, score: float) -> float:
+        """
+        Apply an exponential transformation to the score.
+
+        Args:
+            score (float): The input score (between 0 and 1).
+
+        Returns:
+            float: The transformed score.
+        """
+        return score ** self.exponent
+    
+class Rewardv5(Rewardv3):
+    """
+    Reward function for the HW-NAS environment.
+    Overwrites methods of Rewardv3 to introduce exponentiation of reward components.
+    """
+    reward_version: str = "rewardv5"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def get_reward(self, individual: NASIndividual, **kwargs) -> float:
+        """
+        Compute the reward for the individual.
+        """
+        this_fitness = self.fitness_function(individual).fitness 
+
+        if not hasattr(self, "previous_fitness"):
+            self.previous_fitness = this_fitness
+            return 0
+        else:
+            differential_fitness = this_fitness - self.previous_fitness
+            self.previous_fitness = this_fitness
+            return differential_fitness
     
