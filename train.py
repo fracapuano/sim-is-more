@@ -44,13 +44,12 @@ def parse_args()->object:
     parser.add_argument("--searchspace", default="nats", type=str, 
                         choices=["nats"], help=f"Searchspace to be used. One in ['nats']")  # fbnet will follow
     parser.add_argument("--target-device", default="edgegpu", type=str, help="Target device to be used.")  # TODO: add choices = env.get_devices()
-    parser.add_argument("--performance-weight", default=0.5, type=float, help="Task-associated weight in the reward function. This directly balances the hardware performance.")
-    parser.add_argument("--efficiency-weight", default=0.5, type=float, help="Hardware-associated weight in the reward function. This directly balances the hardware performance.")
+    parser.add_argument("--performance-weight", default=0.6, type=float, help="Task-associated weight in the reward function. This directly balances the hardware performance.")
+    parser.add_argument("--efficiency-weight", default=0.4, type=float, help="Hardware-associated weight in the reward function. This directly balances the hardware performance.")
     
     """The following args help define the training procedure."""
     parser.add_argument("--algorithm", default="PPO", type=str, 
                         choices=["ppo", "trpo", "a2c"], help="RL Algorithm. One in ['ppo', 'trpo', 'a2c']")
-    parser.add_argument("--score-list", nargs="*", type=str, default=["naswot_score", "logsynflow_score", "skip_score"])
     parser.add_argument("--normalization-type", default="minmax", type=str, choices=["std", "minmax"], help="Normalization type to be used for hardware cost. One in ['std', 'minmax']")
     parser.add_argument("--env_name", default="oscar", type=str,
                         choices=list(envs_dict.keys()), help=f"Environment to be used. One in {list(envs_dict.keys())}")
@@ -97,7 +96,7 @@ def main():
                 setattr(args, key, value)
     
     # silencing wandb output
-    os.environ["WANDB_SILENT"] = "true" 
+    os.environ["WANDB_SILENT"] = "false" 
     
     # set seed for reproducibility
     seed_all(seed=args.seed)
@@ -107,8 +106,7 @@ def main():
     searchspace_interface = create_searchspace(searchspace=args.searchspace, dataset=args.dataset)
     # create env (gym.Env)
     env = envs_dict[args.env_name.lower()](
-        searchspace_api=searchspace_interface, 
-        scores=args.score_list,
+        searchspace_api=searchspace_interface,
         target_device=args.target_device,
         weights=[args.performance_weight, args.efficiency_weight],
         normalization_type=args.normalization_type
@@ -147,7 +145,6 @@ def main():
         target_device=args.target_device,
         performance_weight=args.performance_weight,
         efficiency_weight=args.efficiency_weight,
-        score_list=args.score_list,
         learning_rate=args.learning_rate,
         epsilon_scheduling=args.epsilon_scheduling,
         min_eps=args.min_eps,
@@ -225,7 +222,7 @@ def main():
         # also adding wandb callback to the picture here
         callback_list.append(
             WandbCallback(
-                gradient_save_freq=1000 if args.debug else 0,  # to evaluate how training proceeds when debugging
+                gradient_save_freq=1000,  # to evaluate how training proceeds when debugging
                 )
             )
         
