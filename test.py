@@ -65,7 +65,6 @@ def main():
     # create env (gym.Env)
     env = envs_dict[env_name.lower()](
         searchspace_api=searchspace_interface,
-        scores=configuration["score_list"],
         target_device=args.target_device if args.use_custom_device else configuration["target_device"],
         weights=[configuration["performance_weight"], configuration["efficiency_weight"]] 
         )
@@ -75,7 +74,6 @@ def main():
         if args.use_custom_device:
             env = envs_dict["oscar"](
                 searchspace_api=searchspace_interface,
-                scores=configuration["score_list"],
                 target_device=args.target_device,
                 weights=[configuration["performance_weight"], configuration["efficiency_weight"]],
                 cutoff_percentile=100
@@ -128,6 +126,7 @@ def main():
         best_individual = env.current_net.architecture
         episode_bests.append(best_individual)
         if args.verbose:
+            print(f"Initial Network: {initial_net}")
             print(f"Network Designed: {best_individual}")
     
     print("Average episode return {:.4g}".format(returns.mean()))
