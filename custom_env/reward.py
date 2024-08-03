@@ -4,6 +4,7 @@ import numpy as np
 from typing import Literal
 from numpy.typing import NDArray
 from src.interfaces.base_interface import Base_Interface
+from collections import namedtuple
 
 class Rewardv0:
     """
@@ -216,7 +217,7 @@ class Rewardv2(Rewardv1):
         super().__init__(*args, **kwargs)
         self.exponent = exponent  # Control the steepness of the exponential curve
 
-    def get_reward(self, individual:NASIndividual, **kwargs)->float:
+    def get_reward(self, individual:NASIndividual)->float:
         """
         Compute the reward associated to the modification operation.
         Here, the reward is the fitness of the newly generated individual.
@@ -345,4 +346,34 @@ class Rewardv5(Rewardv3):
             differential_fitness = this_fitness - self.previous_fitness
             self.previous_fitness = this_fitness
             return differential_fitness
+
+class Rewardv6(Rewardv5):
+    """
+    Reward function for the HW-NAS environment.
+    Overwrites methods of Rewardv5 to introduce exponentiation of the fitness function.
+    """
+    reward_version: str = "rewardv6"
+
+    def __init__(self, exponent:int = 4, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.exponent = exponent
     
+    def _exponential_transform(self, score: float) -> float:
+        """
+        Apply an exponential transformation to the score.
+
+        Args:
+            score (float): The input score (between 0 and 1).
+
+        Returns:
+            float: The transformed score.
+        """
+        return score ** self.exponent
+
+    def fitness_function(self, individual: NASIndividual) -> NASIndividual:
+        """Applies exponential transportation to the fitness score to skew distribution."""
+        individual_fitness = super().fitness_function(individual).fitness
+        FitnessObject: namedtuple = namedtuple("FitnessObject", "fitness") 
+        
+        return FitnessObject(self._exponential_transform(individual_fitness))
+
