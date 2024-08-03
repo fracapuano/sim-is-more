@@ -2,6 +2,7 @@
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 from stable_baselines3.common.evaluation import evaluate_policy
+import itertools
 import wandb
 import numpy as np
 from typing import Text, List
@@ -156,7 +157,7 @@ class PeriodicEvalCallback(BaseCallback):
         """
         return env.env_method(
             "plot_networks_on_searchspace",
-            terminal_networks, False,  # positional args to the method, [terminal_networks, fitness_color]
+            terminal_networks, True,  # positional args to the method, [terminal_networks, fitness_color]
             indices=0  # only using the first env for this call
         )[0]
 
@@ -220,6 +221,13 @@ class PeriodicEvalCallback(BaseCallback):
                                     title=f"(Average) Evolution of {metric}")
                 }
             )
+
+        # padding the network with to match the last one seen
+        max_timesteps = self.episodes_tracker.episode_length
+        self.episodes_tracker.networks = [
+            sublist + list(itertools.repeat(sublist[-1], max_timesteps - len(sublist)))
+            for sublist in self.episodes_tracker.networks
+        ]
 
         # transposing the networks logged
         transposed_networks_list = [
