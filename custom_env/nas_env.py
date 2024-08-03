@@ -19,7 +19,7 @@ class NASEnv(gym.Env):
                  searchspace_api:Base_Interface,
                  scores:Iterable[Text]=["naswot_score", "logsynflow_score", "skip_score"], 
                  n_mods:int=1,
-                 max_timesteps:int=50, 
+                 max_timesteps:int=10, 
                  normalization_type:Optional[Text]=None):
         # the NAS searchspace is defined at the searchspace_api level
         self.searchspace = searchspace_api

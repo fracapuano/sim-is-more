@@ -9,13 +9,12 @@ from .render import (
 )
 import numpy as np
 from itertools import chain
-from .reward import Rewardv1 as Reward
+from .reward import Rewardv6 as Reward
 from .nas_env import NASEnv
 from gymnasium import spaces
 from collections import deque
 from src import Base_Interface
 import matplotlib.pyplot as plt
-from operator import itemgetter
 from numpy.typing import NDArray
 from .utils import NASIndividual
 from scipy.stats import percentileofscore
@@ -36,10 +35,10 @@ class OscarEnv(NASEnv):
                  searchspace_api:Base_Interface,
                  scores:Iterable[Text]=["naswot_score", "logsynflow_score", "skip_score"],
                  n_mods:int=1,
-                 max_timesteps:int=50,
+                 max_timesteps:int=10,
                  cutoff_percentile:float=85.,
                  target_device:Text="edgegpu",
-                 weights:Iterable[float]=[0.6, 0.4],
+                 weights:Iterable[float]=[0.8, 0.2],
                  latency_cutoff:Optional[float]=None,
                  observation_buffer_size:int=10,
                  normalization_type:Optional[Text]=None,
@@ -233,14 +232,14 @@ class OscarEnv(NASEnv):
     
     def _get_info(self)->dict: 
         """Return the info dictionary."""
-        current_net_latency = self._get_obs()["latency_value"].item()
+        self.current_net_latency = self._get_obs()["latency_value"].item()
 
         info_dict = {
             "current_network": self.current_net.architecture,
             "timestep": self.timestep_counter,
-            "reward": self.reward_handler.get_reward(individual=self.current_net),
-            "current_net_latency": current_net_latency,
-            "current_net_latency_percentile": percentileofscore(self.hardware_costs, current_net_latency),
+            "reward": self.get_reward(individual=self.current_net),
+            "current_net_latency": self.current_net_latency,
+            "current_net_latency_percentile": percentileofscore(self.hardware_costs, self.current_net_latency),
             "latency_cutoff": self.max_latency,
             "is_terminated": self.is_terminated(),
             "is_truncated": self.is_truncated(),
@@ -304,7 +303,7 @@ class OscarEnv(NASEnv):
         reinforced_individual = self.mount_architecture(reinforced_individual, new_individual_encoded)
         # compute the reward associated with producing reinforced_individual
         reward = self.get_reward(individual=reinforced_individual)
-        
+
         # overwrite current obs architecture
         self._observation["architecture"] = new_individual_encoded
         # update consequently the current net field
@@ -377,7 +376,7 @@ class OscarEnv(NASEnv):
             plt.clf()  # clears the current figure
             fig = plt.gcf()
         else:
-            fig = plt.figure(dpi=150)
+            fig = plt.figure()
         
         # retrieving the figure's axis
         ax = plt.gca()
@@ -395,14 +394,27 @@ class OscarEnv(NASEnv):
             ax,
             *zip(*map(lambda n: get_individual_coordinates(self.architecture_to_individual(n)),
                       self.networks_pool)),
-            c=fitness
+            c=fitness,
+            s=20
+        )
+        
+        ax.scatter(
+            *get_individual_coordinates(
+                self.architecture_to_individual(
+                    self.get_reference_architecture()
+                )
+            ),
+            marker="X",
+            s=200,
+            c="tab:red",
+            label="Reference architecture"
         )
 
         # This plot the networks on the background
         ax.scatter(
             *zip(*map(get_individual_coordinates, terminal_networks)),
-            c="red",
-            s=25,
+            c="tab:red",
+            s=100,
             marker="X"
         )
 
@@ -551,7 +563,7 @@ class OscarEnv(NASEnv):
         if draw_background:
             # coloring points based on fitness value
             fitness = list(map(lambda n: self.reward_handler.fitness_function(self.architecture_to_individual(n)).fitness, self.networks_pool))
-            ax1 = create_background_scatter(ax1, self.hardware_costs, performance_measures, c=fitness)
+            ax1 = create_background_scatter(ax1, self.hardware_costs, performance_measures, c=fitness, s=10)
         
         architectures_and_costs = np.hstack((self.hardware_costs.reshape(-1,1), -1 * performance_measures.reshape(-1,1)))
         # computing the Pareto front
