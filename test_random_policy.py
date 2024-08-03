@@ -56,7 +56,7 @@ def main():
             if args.render:
                 env.render()
             
-            report_data.append(info | {"action_performed": action, "reward": reward, "episode_id": ep})
+            report_data.append(info | {"obs": obs, "action_performed": action, "reward": reward, "episode_id": ep})
             
             done = terminated or truncated
             if args.verbose and done:
