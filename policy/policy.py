@@ -66,7 +66,8 @@ class Policy:
                         seed=self.seed, 
                         device=self.device, 
                         gamma=self.gamma, 
-                        ent_coef=self.entropy_coef
+                        ent_coef=self.entropy_coef, 
+                        # policy_kwargs=dict(activation_fn=torch.nn.ReLU)
                         )
 
         elif algo == 'a2c':
