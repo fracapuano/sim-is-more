@@ -127,7 +127,7 @@ def main():
         episode_bests.append(best_individual)
         if args.verbose:
             print(f"Initial Network: {initial_net}")
-            print(f"Network Designed: {best_individual}")
+            print(f"Network Designed ({searchspace_interface.architecture_to_index['/'.join(best_individual)]}): {best_individual}")
     
     print("Average episode return {:.4g}".format(returns.mean()))
     if args.best_ever:
