@@ -85,22 +85,18 @@ class TransitionsHistoryWrapper(gym.Wrapper):
             })
 
     def reset(self, **kwargs):
-        # retrieving the observation from the environment
-        obs, info = self.env.reset(**kwargs)
-
+        """Resetting the buffers for observations and latencies"""
         for _ in range(self.history_len):
-            # representing empty networks with self.empty_placeholder and negative values of latency
+            # representing empty networks with self.empty_placeholder and with 0 latency
             self.observations_deque.appendleft(
                 OrderedDict({
-                    # "architecture": self.empty_placeholder * np.ones(self.env.searchspace.architecture_len),
                     "architecture": (self.empty_architecture_placeholder - 1) * np.ones(self.env.searchspace.architecture_len, dtype=np.int64), 
-                    #"latency_value": -1 * np.ones(1, dtype=np.float32)
                     "latency_value": 0 * np.ones(1, dtype=np.float32)
                 })
             )
             # representing empty actions with choosing self.empty_placeholder 
             self.actions_deque.appendleft(
-                # (-1, self.empty_placeholder)
+                # shape (-1, self.empty_placeholder)
                 np.array(
                     [
                         (self.empty_action_placeholder[0] - 1, self.empty_action_placeholder[1] - 1) 
@@ -110,26 +106,31 @@ class TransitionsHistoryWrapper(gym.Wrapper):
                     flatten()
             )
         
-        return self._stack_buffers_to_obs(obs), info
+        # retrieving the observation from the environment
+        obs, info = self.env.reset(**kwargs)
+        # stacking the initial observation to the left of the history buffer
+        self.observations_deque.appendleft(copy(obs))
+
+        return self._buffers_to_obs(), info
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
+
+        # storing the new observation and action. At init, initial obs is stored right away
         self.observations_deque.appendleft(copy(obs))
         self.actions_deque.appendleft(action)
         
-        return self._stack_buffers_to_obs(obs), reward, terminated, truncated, info
+        return self._buffers_to_obs(), reward, terminated, truncated, info
 
-    def _stack_buffers_to_obs(self, obs):
+    def _buffers_to_obs(self):
         """
-        Stacks the current observation with the history of previous transitions
+        Returns the current buffer of observations + actions into a digestible format
+        for the policy network.
         """
         # unpacking the observations in the deque into architectures and latency values
-        architectures = [o["architecture"] for o in self.observations_deque]
-        latencies = [o["latency_value"] for o in self.observations_deque]
-
         observation = {
-            "architectures": np.concatenate([obs["architecture"]] + list(architectures)),
-            "latency_values": np.concatenate([obs["latency_value"]] + list(latencies)),
+            "architectures": np.concatenate([o["architecture"] for o in self.observations_deque]),
+            "latency_values": np.concatenate([o["latency_value"] for o in self.observations_deque]),
             "actions_performed": np.concatenate(self.actions_deque)
         }
 
