@@ -154,11 +154,8 @@ class MarcellaPlusEnv(OscarEnv):
 
     def reset(self, seed:Optional[int]=None)->NDArray:
         """Resets custom env attributes."""
-        # sampling a new starting observation
-        self._observation = self.observation_space.sample()
-
         # shuffling the operations latency distributions at each reset
-        #self.blocks_distribution = shuffle_dict_values(self.blocks_distribution)
+        # self.blocks_distribution = shuffle_dict_values(self.blocks_distribution)
         
         # aligning the reward handler with the current state of Marcella+
         self.reward_handler._env = self
@@ -182,7 +179,17 @@ class MarcellaPlusEnv(OscarEnv):
         
         # setting the latency cutoff to the cutoff percentile-th of the hardware measures
         self.max_latency = np.percentile(self.hardware_costs, self.cutoff_percentile)
+        
+        # sampling a new starting observation
+        self._observation = self.observation_space.sample()
         self.update_current_net()
+
+        # latency for start network is computed, not sampled
+        self._observation["latency_value"] = \
+            np.array(
+                [self.compute_hardware_cost(architecture_list=self.current_net.architecture)],
+                dtype=np.float32,
+            )
 
         # flushing out timestep counter and the buffer of observations
         self.timestep_counter= 0
