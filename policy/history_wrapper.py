@@ -27,7 +27,7 @@ class TransitionsHistoryWrapper(gym.Wrapper):
             # Initialize the history buffer
             self.history_len = history_len
             # The context window is the number of previous transitions to consider in the observation
-            self.context_window = history_len + 1
+            self.context_window = history_len
             # This initializes the buffers as empty deque
             self.observations_deque = deque(
                  maxlen=history_len
