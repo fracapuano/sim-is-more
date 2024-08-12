@@ -376,4 +376,3 @@ class Rewardv6(Rewardv5):
         FitnessObject: namedtuple = namedtuple("FitnessObject", "fitness") 
         
         return FitnessObject(self._exponential_transform(individual_fitness))
-
