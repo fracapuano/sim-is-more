@@ -57,14 +57,16 @@ def main():
     # reading setting parameters from training config file
     algorithm, env_name = configuration["algorithm"], configuration["env_name"]
 
-    searchspace_interface = create_searchspace(searchspace=configuration["searchspace"], dataset=configuration["dataset"])
+    searchspace_interface = create_searchspace(
+        searchspace=configuration["searchspace"], 
+        dataset=configuration["dataset"]
+    )
     
     # create env (gym.Env)
     env = envs_dict[env_name.lower()](
         searchspace_api=searchspace_interface,
-        scores=configuration["score_list"],
         target_device=args.target_device if args.use_custom_device else configuration["target_device"],
-        weights=[configuration["task_weight"], configuration["hardware_weight"]] 
+        weights=[configuration["performance_weight"], configuration["efficiency_weight"]] 
         )
     
     if env_name == "marcella-plus":
@@ -72,9 +74,8 @@ def main():
         if args.use_custom_device:
             env = envs_dict["oscar"](
                 searchspace_api=searchspace_interface,
-                scores=configuration["score_list"],
                 target_device=args.target_device,
-                weights=[configuration["task_weight"], configuration["hardware_weight"]],
+                weights=[configuration["performance_weight"], configuration["efficiency_weight"]],
                 cutoff_percentile=100
             )
         
@@ -125,7 +126,8 @@ def main():
         best_individual = env.current_net.architecture
         episode_bests.append(best_individual)
         if args.verbose:
-            print(f"Network Designed: {best_individual}")
+            print(f"Initial Network: {initial_net}")
+            print(f"Network Designed ({searchspace_interface.architecture_to_index['/'.join(best_individual)]}): {best_individual}")
     
     print("Average episode return {:.4g}".format(returns.mean()))
     if args.best_ever:

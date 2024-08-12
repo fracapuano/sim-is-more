@@ -2,6 +2,7 @@
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 from stable_baselines3.common.evaluation import evaluate_policy
+import itertools
 import wandb
 import numpy as np
 from typing import Text, List
@@ -9,13 +10,19 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from numpy.typing import NDArray
 
+class NASIndividual:
+    """Dummy class merely for typing purposes"""
+    pass
+
 class ScoresEvolutionTracker:
     def __init__(self, 
                  metrics:List[Text]=[
                      "training_free_score", 
                      "current_net_latency", 
                      "current_net_latency_percentile", 
-                     "test_accuracy"
+                     "test_accuracy",
+                     "reward_performance_score",
+                     "reward_efficiency_score"
                     ],
                  number_of_envs:int=1,
                  episode_length:int=50,
@@ -135,7 +142,42 @@ class PeriodicEvalCallback(BaseCallback):
 
         return figure_rgb_array
 
-    
+    def plot_networks_on_searchspace(
+            self, env: VecEnv, terminal_networks: list[NASIndividual]
+        )->tuple[plt.figure, plt.axis]:
+        """
+        Accesses the plot_networks_on_searchspace method of the input model.
+
+        Args:
+            env (VecEnv): Environment object.
+            terminal_networks (list[NASIndividual]): List of architectures to plot.
+        
+        Returns:
+            Tuple[plt.figure, plt.axis]: Figure and Axis for the plot considered.
+        """
+        return env.env_method(
+            "plot_networks_on_searchspace",
+            terminal_networks, True,  # positional args to the method, [terminal_networks, fitness_color]
+            indices=0  # only using the first env for this call
+        )[0]
+
+    def network_string_to_individual(self, env:VecEnv, network_string: Text)->NASIndividual:
+        """
+        Accesses the architecture_to_individual method of the input model.
+
+        Args:
+            env (VecEnv): Environment object.
+            network_string (Text): Architecture to convert.
+        
+        Returns:
+            NASIndividual: Individual object.
+        """
+        return env.env_method(
+            "architecture_to_individual",
+            network_string.split("/"), # architectures are "/"-joined here
+            indices=0  # only using the first env for this call
+        )[0]
+
     def _on_step(self) -> bool:
         """
         This method will be called by the model after each call to `_env.step()`.
@@ -164,17 +206,34 @@ class PeriodicEvalCallback(BaseCallback):
             tracked_values = getattr(self.episodes_tracker, f"{metric}_buffer")[:, 1:].mean(axis=0)
             # using wandb to log the evolution of the metric over training
             data = [[x, y] for (x, y) in zip(np.arange(1, self.episode_duration), tracked_values)]
-            # transposing the networks logged
-            transposed_networks_list = [
-                [self.episodes_tracker.networks[i][j] for i in range(len(self.episodes_tracker.networks))]
-                for j in range(len(self.episodes_tracker.networks[0]))
-            ]
-
             # logging the average initial and terminal values for the metric considered
             wandb.log({
                 f"Average initial {metric}": tracked_values[0],
                 f"Average terminal {metric}": tracked_values[-1]
             })
+
+            table = wandb.Table(data=data, columns = ["timestep", metric])
+            wandb.log(
+                {f"{metric}-evolution-over-training": \
+                    wandb.plot.line(table, 
+                                    "timestep", 
+                                    metric,
+                                    title=f"(Average) Evolution of {metric}")
+                }
+            )
+
+        # padding the network with to match the last one seen
+        max_timesteps = self.episodes_tracker.episode_length
+        self.episodes_tracker.networks = [
+            sublist + list(itertools.repeat(sublist[-1], max_timesteps - len(sublist)))
+            for sublist in self.episodes_tracker.networks
+        ]
+
+        # transposing the networks logged
+        transposed_networks_list = [
+            [self.episodes_tracker.networks[i][j] for i in range(len(self.episodes_tracker.networks))]
+            for j in range(len(self.episodes_tracker.networks[0]))
+        ]
 
         if self.log_video:  # optionally logging video -- increases memory usage and slows down evaluation
             # this logs the networks observed over the many test episodes
@@ -185,29 +244,21 @@ class PeriodicEvalCallback(BaseCallback):
             wandb.log(
                 {"Network Evolutions": networks_table}
             )
-            # retrieving the plot_networks_on_searchspace on the env object
-            plot_networks_on_searchspace = \
-                lambda terminal_networks: self.model.get_env().env_method(
-                    "plot_networks_on_searchspace",
-                    terminal_networks, False,  # positional args to the method, [terminal_networks, fitness_color]
-                    indices=0  # only using the first env for this call
-                )[0]
-            
-            # turning each network into an individual for rendering purposes
-            network_string_to_individual = lambda network_string: \
-                self.model.get_env().env_method(
-                    "architecture_to_individual",
-                    network_string.split("/"), # architectures are "/"-joined here
-                    indices=0  # only using the first env for this call
-                )[0]
-
             frames = []
             for timestep_index, terminal_networks in enumerate(transposed_networks_list):
-                # plotting the networks on the searchspace across test episodes                
-                networks_plot_fig, networks_plot_ax = plot_networks_on_searchspace(
-                    terminal_networks=map(network_string_to_individual, terminal_networks),
+                terminal_individuals = []
+                for n in terminal_networks:  # have to iterate as functional approach is not pickleable
+                    terminal_individuals.append(
+                        self.network_string_to_individual(self.model.get_env(), n)
+                    )
+                
+                networks_plot_fig, networks_plot_ax = self.plot_networks_on_searchspace(
+                    self.model.get_env(), terminal_individuals
                 )
                 networks_plot_ax.set_title(f"Timestep Index: {timestep_index}")
+                networks_plot_ax.set_xlabel("Efficiency score")
+                networks_plot_ax.set_ylabel("Performance score")
+
                 frames.append(
                     self.figure_to_rgb(networks_plot_fig)
                 )
@@ -223,16 +274,6 @@ class PeriodicEvalCallback(BaseCallback):
                 }
             )
             
-        table = wandb.Table(data=data, columns = ["timestep", metric])
-        wandb.log(
-            {f"{metric}-evolution-over-training": \
-                wandb.plot.line(table, 
-                                "timestep", 
-                                metric,
-                                title=f"Average Evolution of {metric}")
-            }
-        )
-        
         # How many episodes were terminated during the evaluation
         wandb.log({"TerminationRate": self.episodes_tracker.number_of_terminated_episodes / self.n_eval_episodes})
 

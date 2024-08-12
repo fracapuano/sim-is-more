@@ -33,6 +33,7 @@ def main():
     env = envs_dict[args.env.lower()](searchspace_api=searchspace_interface)
 
     if args.render:
+        env.rendering_test_mode = True
         env.render_mode = "human"
 
     if env.name == "marcella-plus":
@@ -55,7 +56,7 @@ def main():
             if args.render:
                 env.render()
             
-            report_data.append(info | {"action_performed": action, "reward": reward, "episode_id": ep})
+            report_data.append(info | {"obs": obs, "action_performed": action, "reward": reward, "episode_id": ep})
             
             done = terminated or truncated
             if args.verbose and done:

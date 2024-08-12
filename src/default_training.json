@@ -1,9 +1,9 @@
 {
     "dataset": "cifar10",
     "searchspace": "nats",
-    "target_device": "edgegpu",
+    "target_device": "2080ti",
     "algorithm": "PPO",
-    "env_name": "oscar",
+    "env_name": "marcella",
     "verbose": 1,
     "train_timesteps": 1000,
     "evaluate_every": 500,

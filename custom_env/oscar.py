@@ -9,21 +9,23 @@ from .render import (
 )
 import numpy as np
 from itertools import chain
+from .reward import Rewardv0 as Reward
 from .nas_env import NASEnv
 from gymnasium import spaces
 from collections import deque
 from src import Base_Interface
 import matplotlib.pyplot as plt
-from operator import itemgetter
 from numpy.typing import NDArray
 from .utils import NASIndividual
 from scipy.stats import percentileofscore
 from typing import Iterable, Text, Tuple, Dict, Optional, Union
+from warnings import warn
+
 
 class OscarEnv(NASEnv):
     metadata = {
         "render_modes": ["human", "rgb_array"],
-        "render_fps": 15, 
+        "render_fps": 30,
     }
     """
     gym.Env for Hardware-aware RL-based NAS. 
@@ -33,10 +35,10 @@ class OscarEnv(NASEnv):
                  searchspace_api:Base_Interface,
                  scores:Iterable[Text]=["naswot_score", "logsynflow_score", "skip_score"],
                  n_mods:int=1,
-                 max_timesteps:int=50,
+                 max_timesteps:int=10,
                  cutoff_percentile:float=85.,
                  target_device:Text="edgegpu",
-                 weights:Iterable[float]=[0.6, 0.4],
+                 weights:Iterable[float]=[0.8, 0.2],
                  latency_cutoff:Optional[float]=None,
                  observation_buffer_size:int=10,
                  normalization_type:Optional[Text]=None,
@@ -49,10 +51,13 @@ class OscarEnv(NASEnv):
             max_timesteps=max_timesteps, 
             normalization_type=normalization_type
         )
-        # setting the target device
+        # setting the target device, env and searchspace-wise
         self.target_device = target_device
+        self.searchspace.target_device = target_device
         # casting weights to numpy array
         self.weights = np.array(weights)
+        # initializing the reward handler -- this moves reward computation out of the environment
+        self.reward_handler = Reward(searchspace=self.searchspace, weights=self.weights)
         # initializing the observations buffer size, for rendering purposes
         self.observations_buffer_size = observation_buffer_size
         self.observations_buffer = deque(maxlen=self.observations_buffer_size)
@@ -150,6 +155,8 @@ class OscarEnv(NASEnv):
         Returns:
             NASIndividual: Individual, with fitness field.
         """
+        warn("This method is deprecated. Use the fitness_function method from the reward_handler attribute!", DeprecationWarning, stacklevel=2)
+        
         if individual.fitness is None:  # None at initialization only
             tf_scores = np.array([
                 self.normalize_score(
@@ -194,6 +201,8 @@ class OscarEnv(NASEnv):
         Returns:
             Union[float, NDArray]: The combined scores.
         """
+        warn("This method is deprecated. Use the fitness_function method from the reward_handler attribute!", DeprecationWarning, stacklevel=2)
+
         to_array = lambda x: np.array(x) if not isinstance(x, np.ndarray) else x
         log_squash = lambda x: x - np.log10(1e-1+1-x)
 
@@ -214,6 +223,8 @@ class OscarEnv(NASEnv):
         Returns:
             float: The computed hardware cost.
         """
+        warn("This method is deprecated. Use the fitness_function method from the reward_handler attribute!", DeprecationWarning, stacklevel=2)
+
         return self.searchspace.list_to_score(input_list=architecture_list, score=f"{self.target_device}_latency")
 
     def _get_obs(self)->Dict[Text, spaces.Space]:
@@ -221,26 +232,23 @@ class OscarEnv(NASEnv):
     
     def _get_info(self)->dict: 
         """Return the info dictionary."""
-        current_net_latency = self._get_obs()["latency_value"].item()
+        self.current_net_latency = self._get_obs()["latency_value"].item()
 
-        training_free_coefficients = np.ones(len(self.score_names)) / len(self.score_names)
-        training_free_score = \
-            np.array(itemgetter(*self.score_names)(self.current_net._scores)).reshape(-1,) @ training_free_coefficients
-        
         info_dict = {
             "current_network": self.current_net.architecture,
-            "training_free_score": training_free_score,
             "timestep": self.timestep_counter,
-            "current_net_latency": current_net_latency,
-            "current_net_latency_percentile": percentileofscore(self.hardware_costs, current_net_latency),
+            "reward": self.get_reward(individual=self.current_net),
+            "current_net_latency": self.current_net_latency,
+            "current_net_latency_percentile": percentileofscore(self.hardware_costs, self.current_net_latency),
             "latency_cutoff": self.max_latency,
             "is_terminated": self.is_terminated(),
             "is_truncated": self.is_truncated(),
+            "networks_seen": len(self.networks_seen),
+            
             # test_accuracy is obtained from a lookup table and never accessed during training
             "test_accuracy": self.searchspace.list_to_accuracy(input_list=self.current_net.architecture),
-            "networks_seen": len(self.networks_seen)
         }
-        info_dict |= self.current_net._scores
+        info_dict |= self.reward_handler.get_individual_scores(individual=self.current_net)
         
         return info_dict
 
@@ -252,15 +260,14 @@ class OscarEnv(NASEnv):
         May be setted to always return False when no termination condition is needed.
         """
         # return bool(self.current_net_latency > self.max_latency)
-        False
+        return False
 
-    def get_reward(self, new_individual:NASIndividual)->float:
+    def get_reward(self, individual:NASIndividual)->float:
         """
         Compute the reward associated to the modification operation.
         Here, the reward is the fitness of the newly generated individual
         """
-        # removing a small penalty to the reward to discourage stalling
-        return new_individual.fitness - 1
+        return self.reward_handler.get_reward(individual=individual)
 
     def step(self, action:NDArray)->Tuple[NDArray, float, bool, dict]: 
         """Steps the episode having a given action.
@@ -294,11 +301,9 @@ class OscarEnv(NASEnv):
                                               architecture_string_to_idx=self.searchspace.architecture_to_index)
         # mounting the architecture on the new individual
         reinforced_individual = self.mount_architecture(reinforced_individual, new_individual_encoded)
-        # score individual based on its test accuracy
-        reinforced_individual = self.fitness_function(reinforced_individual)
         # compute the reward associated with producing reinforced_individual
-        reward = self.get_reward(new_individual=reinforced_individual)
-        
+        reward = self.get_reward(individual=reinforced_individual)
+
         # overwrite current obs architecture
         self._observation["architecture"] = new_individual_encoded
         # update consequently the current net field
@@ -334,6 +339,12 @@ class OscarEnv(NASEnv):
 
         return self._get_obs(), self._get_info()
     
+    def get_fitness_of_network_in_pool(self, n: NASIndividual)->float:
+        """Handle function to map each network in the pool to its fitness value."""
+        return self.reward_handler.fitness_function(
+            self.architecture_to_individual(n)
+        ).fitness,
+    
     def plot_networks_on_searchspace(
             self, 
             terminal_networks:list[NASIndividual], 
@@ -365,7 +376,7 @@ class OscarEnv(NASEnv):
             plt.clf()  # clears the current figure
             fig = plt.gcf()
         else:
-            fig = plt.figure(dpi=150)
+            fig = plt.figure()
         
         # retrieving the figure's axis
         ax = plt.gca()
@@ -374,10 +385,7 @@ class OscarEnv(NASEnv):
         if fitness_color:
             fitness = list(
                 map(
-                    lambda n: self.reward_handler.
-                        fitness_function(
-                            self.architecture_to_individual(n)
-                        ).fitness,
+                    self.get_fitness_of_network_in_pool,
                     self.networks_pool
                     )
                 )
@@ -386,14 +394,27 @@ class OscarEnv(NASEnv):
             ax,
             *zip(*map(lambda n: get_individual_coordinates(self.architecture_to_individual(n)),
                       self.networks_pool)),
-            c=fitness
+            c=fitness,
+            s=20
+        )
+        
+        ax.scatter(
+            *get_individual_coordinates(
+                self.architecture_to_individual(
+                    self.get_reference_architecture()
+                )
+            ),
+            marker="X",
+            s=200,
+            c="tab:red",
+            label="Reference architecture"
         )
 
         # This plot the networks on the background
         ax.scatter(
             *zip(*map(get_individual_coordinates, terminal_networks)),
-            c="red",
-            s=25,
+            c="tab:red",
+            s=100,
             marker="X"
         )
 
@@ -509,7 +530,7 @@ class OscarEnv(NASEnv):
         Returns:
             Optional[NDArray]: The rendered frame as an RGB array if mode is "rgb_array", None otherwise.
         """ 
-        screen_size = (640*2, 480*2)
+        screen_size = (640*1.5, 480*1.5)
 
         if not use_accuracy:
             # populating the combined scores and hardware costs attributes if not already done
@@ -540,11 +561,9 @@ class OscarEnv(NASEnv):
         performance_measures = self.test_accuracies if use_accuracy else self.combined_scores
 
         if draw_background:
-            normalized_performance = \
-                (performance_measures - performance_measures.min())/(performance_measures.max() - performance_measures.min())
             # coloring points based on fitness value
-            c=self.combine_scores(normalized_performance, 1-self.normalized_hardware_costs)
-            ax1 = create_background_scatter(ax1, self.hardware_costs, performance_measures, c=c)
+            fitness = list(map(lambda n: self.reward_handler.fitness_function(self.architecture_to_individual(n)).fitness, self.networks_pool))
+            ax1 = create_background_scatter(ax1, self.hardware_costs, performance_measures, c=fitness, s=10)
         
         architectures_and_costs = np.hstack((self.hardware_costs.reshape(-1,1), -1 * performance_measures.reshape(-1,1)))
         # computing the Pareto front
@@ -563,7 +582,12 @@ class OscarEnv(NASEnv):
             ax1 = create_background_vlines(ax1, self.max_latency, label="Latency Cutoff")
         
         # drawing the architectures
-        ax1 = draw_architectures_on_background(ax1, *self.unpack_buffer(y_getter=y_getter), label="Current Network", zorder=2)
+        ax1 = draw_architectures_on_background(
+            ax1,
+            *self.unpack_buffer(y_getter=y_getter), 
+            label="Current Network", 
+            zorder=2
+        )
         ax1.set_xlabel("Latency (ms)"); ax1.set_ylabel(y_label)
 
         # removing legend
@@ -584,8 +608,12 @@ class OscarEnv(NASEnv):
 
         # drawing the reward bar
         ax3 = draw_hbars(ax3,
-                        [r"$r_t$", "hw_score(a)", "tf_score(a)"], 
-                        [self.current_net.fitness, info_dict["network_hw_score"], info_dict["network_tf_score"]],
+                        [r"$r_t$", "efficiency_score(a)", "performance_score(a)"], 
+                        [
+                            info_dict["reward"], 
+                            info_dict["reward_efficiency_score"], 
+                            info_dict["reward_performance_score"]
+                        ],
                         height=0.5)
         #ax3.set_xlim(-1, 1)
         ax3.set_title("One-step Transition Reward")

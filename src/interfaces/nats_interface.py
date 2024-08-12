@@ -42,7 +42,7 @@ class NATS_Interface(Base_Interface):
         elif path_to_lookup is not None:
             # either loading the lookup table or the synthetic devices lookup table
             with open(path_to_lookup, "r") as lookup_file:
-                    self.lookup_table = {int(k): v for k, v in json.load(lookup_file).items()}
+                self.lookup_table = {int(k): v for k, v in json.load(lookup_file).items()}
 
             with open(path_to_lookup_index, "r") as lookup_index_file:
                 self.architecture_to_index = json.load(lookup_index_file)
@@ -59,6 +59,34 @@ class NATS_Interface(Base_Interface):
     def dataset(self)->str:
         return self._dataset
     
+    def get_accuracy_stats(self)->Dict[str, float]:
+        """Returns the accuracy stats for the considered dataset."""
+        if not hasattr(self, "accuracy_values"):
+            # iterable containing the accuracy values for each network in the search space
+            self.accuracy_values = [
+                self.lookup_table[i][self.dataset]["test_accuracy"] for i in range(len(self))
+            ]
+
+        mean_accuracy = sum(self.accuracy_values) / len(self.accuracy_values)
+        squared_diff = [(x - mean_accuracy) ** 2 for x in self.accuracy_values]
+        std_accuracy = (sum(squared_diff) / (len(self.accuracy_values)-1)) ** 0.5
+
+        return {
+            "min": min(self.accuracy_values),
+            "max": max(self.accuracy_values),
+            "mean": mean_accuracy,
+            "std": std_accuracy
+        }
+
+    def get_latency_stats(self)->Dict[str, float]:
+        """Returns the latency stats for the considered dataset."""
+        return {
+            "min": self._data[f"min_{self.target_device}_latency"],
+            "max": self._data[f"max_{self.target_device}_latency"],
+            "mean": self._data[f"mean_{self.target_device}_latency"],
+            "std": self._data[f"std_{self.target_device}_latency"],
+        }
+
     def blocks_latency(self, custom_devices:Optional[List[Text]]=None)->Dict[Text, NDArray]:
         """Returns the latencies measurements of each operation across `devices`
         

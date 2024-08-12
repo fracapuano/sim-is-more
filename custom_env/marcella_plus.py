@@ -46,7 +46,7 @@ class MarcellaPlusEnv(OscarEnv):
             self.blocks_distribution = {
                 op: TruncatedNormalDistribution(
                     mean=device_measurements[op].mean(), 
-                    std=device_measurements[op].std()
+                    std=3*device_measurements[op].std()
                 )
                 for op in self.searchspace.all_ops
             }
@@ -154,11 +154,11 @@ class MarcellaPlusEnv(OscarEnv):
 
     def reset(self, seed:Optional[int]=None)->NDArray:
         """Resets custom env attributes."""
-        # sampling a new starting observation
-        self._observation = self.observation_space.sample()
-
         # shuffling the operations latency distributions at each reset
-        #self.blocks_distribution = shuffle_dict_values(self.blocks_distribution)
+        # self.blocks_distribution = shuffle_dict_values(self.blocks_distribution)
+        
+        # aligning the reward handler with the current state of Marcella+
+        self.reward_handler._env = self
 
         # sampling a new distribution of blocks' latencies
         self._sample_blocks_latencies()
@@ -166,13 +166,30 @@ class MarcellaPlusEnv(OscarEnv):
         # computing hardware cost samples
         self._set_hardware_costs()
         self._set_normalization_params()
+
+        self.latency_stats = {
+                "min": self.hardware_costs.min().item(),
+                "max": self.hardware_costs.max().item(),
+                "mean": self.hardware_costs.mean().item(),
+                "std": self.hardware_costs.std().item()
+            }
         
         # possibly storing the blocks' latencies in the observation
         # self._observation["blocks_latency"] = self.blocks_latency
         
         # setting the latency cutoff to the cutoff percentile-th of the hardware measures
         self.max_latency = np.percentile(self.hardware_costs, self.cutoff_percentile)
+        
+        # sampling a new starting observation
+        self._observation = self.observation_space.sample()
         self.update_current_net()
+
+        # latency for start network is computed, not sampled
+        self._observation["latency_value"] = \
+            np.array(
+                [self.compute_hardware_cost(architecture_list=self.current_net.architecture)],
+                dtype=np.float32,
+            )
 
         # flushing out timestep counter and the buffer of observations
         self.timestep_counter= 0

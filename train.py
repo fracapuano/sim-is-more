@@ -4,6 +4,7 @@ import wandb
 import torch
 import warnings
 import argparse
+import numpy as np
 from utils import (
     boolean_string, 
     float_range, 
@@ -11,7 +12,7 @@ from utils import (
     get_distribution_devices
 )
 from policy import (
-    PeriodicEvalCallback, 
+    PeriodicEvalCallback,
     ChangeDevice_Callback,
     TransitionsHistoryWrapper
 )
@@ -25,6 +26,9 @@ from custom_env import (
 )
 from policy.policy import Policy
 from wandb.integration.sb3 import WandbCallback
+from stable_baselines3.common.vec_env import (
+    VecNormalize
+)
 from stable_baselines3.common.callbacks import (
     CallbackList, 
     EveryNTimesteps
@@ -42,15 +46,13 @@ def parse_args()->object:
     parser.add_argument("--dataset", default="cifar10", type=str, help="Dataset on which to run the search. One in ['cifar10', 'cifar100', 'imagenet']")
     parser.add_argument("--searchspace", default="nats", type=str, 
                         choices=["nats"], help=f"Searchspace to be used. One in ['nats']")  # fbnet will follow
-    parser.add_argument("--target-device", default="edgegpu", 
-                        choices=["edgegpu", "raspi4", "pixel3", "eyeriss", "fpga"], type=str, help="Target device to be used.")
-    parser.add_argument("--task-weight", default=0.5, type=float, help="Task-associated weight in the reward function. This directly balances the hardware performance.")
-    parser.add_argument("--hardware-weight", default=0.5, type=float, help="Hardware-associated weight in the reward function. This directly balances the hardware performance.")
+    parser.add_argument("--target-device", default="edgegpu", type=str, help="Target device to be used.")  # TODO: add choices = env.get_devices()
+    parser.add_argument("--performance-weight", default=0.6, type=float, help="Task-associated weight in the reward function. This directly balances the hardware performance.")
+    parser.add_argument("--efficiency-weight", default=0.4, type=float, help="Hardware-associated weight in the reward function. This directly balances the hardware performance.")
     
     """The following args help define the training procedure."""
     parser.add_argument("--algorithm", default="PPO", type=str, 
                         choices=["ppo", "trpo", "a2c"], help="RL Algorithm. One in ['ppo', 'trpo', 'a2c']")
-    parser.add_argument("--score-list", nargs="*", type=str, default=["naswot_score", "logsynflow_score", "skip_score"])
     parser.add_argument("--normalization-type", default="minmax", type=str, choices=["std", "minmax"], help="Normalization type to be used for hardware cost. One in ['std', 'minmax']")
     parser.add_argument("--env_name", default="oscar", type=str,
                         choices=list(envs_dict.keys()), help=f"Environment to be used. One in {list(envs_dict.keys())}")
@@ -97,7 +99,7 @@ def main():
                 setattr(args, key, value)
     
     # silencing wandb output
-    # os.environ["WANDB_SILENT"] = "true" 
+    os.environ["WANDB_SILENT"] = "false" 
     
     # set seed for reproducibility
     seed_all(seed=args.seed)
@@ -107,10 +109,9 @@ def main():
     searchspace_interface = create_searchspace(searchspace=args.searchspace, dataset=args.dataset)
     # create env (gym.Env)
     env = envs_dict[args.env_name.lower()](
-        searchspace_api=searchspace_interface, 
-        scores=args.score_list,
+        searchspace_api=searchspace_interface,
         target_device=args.target_device,
-        weights=[args.task_weight, args.hardware_weight],
+        weights=[args.performance_weight, args.efficiency_weight],
         normalization_type=args.normalization_type
     )
 
@@ -118,18 +119,32 @@ def main():
     wrappers_list = [history_wrap] if env.name == "marcella-plus" else None
     
     if "marcella" in env.name:
+        available_devices = searchspace_interface.get_devices()
+        if len(args.distribution_devices)!=0: 
+            distribution_devices = args.distribution_devices
+        else:
+            distribution_devices = np.random.choice(len(available_devices))
+
         # leaving some devices from the list of devices to be used while training
         env.devices = get_distribution_devices(
-            available_devices=searchspace_interface.get_devices(), chosen_devices=args.distribution_devices
+            available_devices=available_devices, 
+            chosen_devices=distribution_devices
         )
     
     # build the envs according to spec
     envs = build_vec_env(
         env=env,
         n_envs=args.n_envs, 
-        subprocess=args.parallel_envs, 
+        subprocess=False, 
         wrappers_list=wrappers_list)
-    
+
+    # normalizing both the observation and reward while training
+    envs = VecNormalize(
+        envs, 
+        gamma=args.gamma, 
+        norm_obs_keys=["latency_value"]
+    )
+
     # training config dictionary
     training_config = dict(
         algorithm=args.algorithm,
@@ -138,14 +153,18 @@ def main():
         train_timesteps=to_scientific_notation(args.train_timesteps),
         random_seed=args.seed,
         target_device=args.target_device,
-        task_weight=args.task_weight,
-        hardware_weight=args.hardware_weight,
-        score_list=args.score_list,
+        performance_weight=args.performance_weight,
+        efficiency_weight=args.efficiency_weight,
         learning_rate=args.learning_rate,
         epsilon_scheduling=args.epsilon_scheduling,
         min_eps=args.min_eps,
         max_eps=args.max_eps,
-        history_len=args.history_len
+        history_len=args.history_len,
+        training_devices=args.target_device if "marcella" not in env.name else env.devices,
+        available_devices=env.searchspace.get_devices(),
+        reward_version=env.reward_handler.reward_version,
+        reward_performance_score=env.reward_handler.performance_score,
+        reward_efficiency_score=env.reward_handler.efficiency_score
     )
 
     if args.verbose > 0: 
@@ -164,6 +183,7 @@ def main():
     # dumping training config to json file
     if not os.path.exists(best_model_path):
         os.makedirs(best_model_path)
+    
     with open(f"{best_model_path}/training_config.json", "w+") as f:
         args_dict = vars(args)
         if "marcella" in args.env_name:
@@ -177,7 +197,7 @@ def main():
         env=envs,
         n_eval_episodes=args.test_episodes, 
         best_model_path=best_model_path,
-        log_video=False
+        log_video=True
     )
     
     # invoke inner_callback every `evaluate_every` timesteps
@@ -212,7 +232,7 @@ def main():
         # also adding wandb callback to the picture here
         callback_list.append(
             WandbCallback(
-                gradient_save_freq=1000 if args.debug else 0,  # to evaluate how training proceeds when debugging
+                gradient_save_freq=1000,  # to evaluate how training proceeds when debugging
                 )
             )
         

@@ -5,7 +5,7 @@ from gymnasium import spaces
 from src import Base_Interface
 from .utils import NASIndividual
 from numpy.typing import NDArray
-from typing import Iterable, Tuple, Text, Optional
+from typing import Iterable, Tuple, Text, Optional, Union
 
 class NASEnv(gym.Env): 
     """
@@ -19,7 +19,7 @@ class NASEnv(gym.Env):
                  searchspace_api:Base_Interface,
                  scores:Iterable[Text]=["naswot_score", "logsynflow_score", "skip_score"], 
                  n_mods:int=1,
-                 max_timesteps:int=50, 
+                 max_timesteps:int=10, 
                  normalization_type:Optional[Text]=None):
         # the NAS searchspace is defined at the searchspace_api level
         self.searchspace = searchspace_api
@@ -164,9 +164,6 @@ class NASEnv(gym.Env):
         net = self._observation if not isinstance(self._observation, dict) else self._observation.get("architecture", None)
 
         self.current_net = self.mount_architecture(self.current_net, net)
-        
-        # updating the fitness value
-        self.current_net = self.fitness_function(self.current_net)
 
     def perform_modification(self, new_individual:NDArray, modification:Tuple[int, int])->NDArray: 
         """
@@ -310,4 +307,32 @@ class NASEnv(gym.Env):
 
     def get_max_timesteps(self)->int:
         return self.max_timesteps
+    
+    def architecture_to_individual(self, architecture:Union[list[Text], Text])->NASIndividual:
+        """
+        Turns an architecture, whether in list or architecture string format into a NASIndividual,
+        allowing fitness computation through the reward handler interface.
+        
+        Args:
+            architecture (Union[list[Text], Text]): Input architecture, either as a list of operations 
+                                                    or architecture string.
+
+        Returns:
+            NASIndividual: Architecture individual.
+        """
+        if not isinstance(architecture, (list, str)):
+            raise ValueError(f"Input architecture {architecture} is neither of type:'str' or type:'list'!")
+
+        architecture_encoded = self.searchspace.encode_architecture(
+            self.searchspace.list_to_architecture(architecture) if isinstance(architecture, list)
+            else architecture
+        )
+
+        empty_individual = NASIndividual(
+            architecture=None, 
+            index=None, 
+            architecture_string_to_idx=self.searchspace.architecture_to_index
+        )
+        
+        return self.mount_architecture(empty_individual, architecture_encoded)
     
