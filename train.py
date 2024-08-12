@@ -12,7 +12,7 @@ from utils import (
     get_distribution_devices
 )
 from policy import (
-    PeriodicEvalCallback, 
+    PeriodicEvalCallback,
     ChangeDevice_Callback,
     TransitionsHistoryWrapper
 )
@@ -26,6 +26,9 @@ from custom_env import (
 )
 from policy.policy import Policy
 from wandb.integration.sb3 import WandbCallback
+from stable_baselines3.common.vec_env import (
+    VecNormalize
+)
 from stable_baselines3.common.callbacks import (
     CallbackList, 
     EveryNTimesteps
@@ -132,9 +135,16 @@ def main():
     envs = build_vec_env(
         env=env,
         n_envs=args.n_envs, 
-        subprocess=args.parallel_envs, 
+        subprocess=False, 
         wrappers_list=wrappers_list)
-    
+
+    # normalizing both the observation and reward while training
+    envs = VecNormalize(
+        envs, 
+        gamma=args.gamma, 
+        norm_obs_keys=["latency_value"]
+    )
+
     # training config dictionary
     training_config = dict(
         algorithm=args.algorithm,

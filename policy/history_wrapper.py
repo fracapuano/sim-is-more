@@ -73,12 +73,12 @@ class TransitionsHistoryWrapper(gym.Wrapper):
 
             self.observation_space = spaces.Dict({
                 # allowing for negative values allows to have empty input nodes in the policy network
-                    "architectures": spaces.MultiDiscrete(
+                    "architecture": spaces.MultiDiscrete(
                             list(chain.from_iterable(architectures_list)),
                             # start=[-1 for _ in range(self.env.searchspace.architecture_len * self.context_window)]
                     ),
-                    "latency_values": spaces.Box(low=0., high=float("inf"), shape=(self.context_window,)),
-                    "actions_performed": spaces.MultiDiscrete(
+                    "latency_value": spaces.Box(low=0., high=float("inf"), shape=(self.context_window,)),
+                    "action_performed": spaces.MultiDiscrete(
                             list(chain.from_iterable([val for sublist in actions_list for val in sublist])),
                             # start=[-1 for _ in range(2 * self.env.n_mods * self.history_len)]
                     )
@@ -129,9 +129,9 @@ class TransitionsHistoryWrapper(gym.Wrapper):
         """
         # unpacking the observations in the deque into architectures and latency values
         observation = {
-            "architectures": np.concatenate([o["architecture"] for o in self.observations_deque]),
-            "latency_values": np.concatenate([o["latency_value"] for o in self.observations_deque]),
-            "actions_performed": np.concatenate(self.actions_deque)
+            "architecture": np.concatenate([o["architecture"] for o in self.observations_deque]),
+            "latency_value": np.concatenate([o["latency_value"] for o in self.observations_deque]),
+            "action_performed": np.concatenate(self.actions_deque)
         }
 
         return OrderedDict(observation)
