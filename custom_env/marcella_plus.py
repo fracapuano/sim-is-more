@@ -36,7 +36,7 @@ class MarcellaPlusEnv(OscarEnv):
         This variable stores the distribution of latencies for each block.
         At each call of the `reset()` method, blocks' latencies are sampled from said distributions
 
-        If custom_devices is None, the distribution of latencies is reconstruced accessing all devices directly 
+        If custom_devices is None, the distribution of latencies is reconstructed accessing all devices directly 
         from the searchspace object and fitting a truncated normal distribution on the latencies of each block.
         """
         if blocks_distribution is None:

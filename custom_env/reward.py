@@ -22,7 +22,7 @@ class Rewardv0:
         
         self.searchspace = searchspace
         self.weights = weights
-
+        self.top_10_fitnesses = None #for the region-based reward function
         self.accuracy_stats = self.searchspace.get_accuracy_stats()
     
     @property
@@ -44,6 +44,23 @@ class Rewardv0:
         """
         return self.get_normalized_latency(individual)
 
+    def compute_top10_fitnesses(self, individual: NASIndividual):
+        fitnesses_all_archis = []
+        for archi_obj in self.searchspace:
+            archi_list = self.searchspace.architecture_to_list(archi_obj)
+            archi_ind = NASIndividual(
+                architecture = archi_list, 
+                architecture_string_to_idx= individual.architecture_string_to_idx,
+                index = None,
+            )
+            normalized_performance_score_obj =  self.get_performance_score(archi_ind)
+            normalized_efficiency_score_obj = self.get_efficiency_score(archi_ind)
+            fitness = self.combine_scores(normalized_performance_score_obj, normalized_efficiency_score_obj)
+            fitnesses_all_archis.append(fitness)
+        top_10_fitnesses = sorted(fitnesses_all_archis)[-10:]
+        self.top_10_fitnesses = top_10_fitnesses
+        return top_10_fitnesses
+
     def fitness_function(self, individual:NASIndividual)->NASIndividual: 
         """
         Directly overwrites the fitness attribute for a given individual.
@@ -54,14 +71,17 @@ class Rewardv0:
         Returns:
             NASIndividual: Individual, with fitness field.
         """
+        if self.top_10_fitnesses is None:
+            self.top_10_fitnesses = self.compute_top10_fitnesses(individual)
         if individual.fitness is None:  # None at initialization
-            normalized_performance_score = self.get_performance_score(individual)
-            normalized_efficiency_score =  self.get_efficiency_score(individual)
-            
-            # in the hardware aware contest performance is in a direct tradeoff with hardware performance
-            individual._fitness = self.combine_scores(normalized_performance_score, normalized_efficiency_score)
-        
-        return individual
+            normalized_performance_score =  self.get_performance_score(individual)
+            normalized_efficiency_score = self.get_efficiency_score(individual)
+            fitness_individual = self.combine_scores(normalized_performance_score, normalized_efficiency_score)
+            if fitness_individual > min(self.top_10_fitnesses):
+                individual._fitness = 5 
+            else:
+                individual._fitness = -1 
+            return individual
 
     def get_individual_scores(self, individual:NASIndividual)->dict:
         """
